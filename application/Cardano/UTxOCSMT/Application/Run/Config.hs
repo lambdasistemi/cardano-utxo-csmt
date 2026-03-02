@@ -50,6 +50,10 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( newFinality
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Point)
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
 import Control.Lens
     ( Prism'
     , lazy
@@ -62,23 +66,16 @@ import Control.Lens
     )
 import Data.ByteString (StrictByteString)
 import Data.ByteString.Lazy (LazyByteString)
-import Data.ByteString.Short (fromShort)
-import Data.ByteString.Short qualified as B
-import Data.Serialize
-    ( getShortByteString
-    , getWord32be
-    , getWord64be
-    , putShortByteString
-    , putWord32be
-    , putWord64be
-    )
-import Data.Serialize.Extra (evalGetM, evalPutM)
+import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Short (fromShort, toShort)
 import Database.RocksDB
     ( Config (..)
     , DB
     , withDBCF
     )
-import Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
+import Ouroboros.Consensus.HardFork.Combinator
+    ( OneEraHash (..)
+    )
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Point (WithOrigin (..))
@@ -152,7 +149,8 @@ context =
             FromKV
                 { isoK = strict . isoK fromKVHashes
                 , fromV = fromV fromKVHashes . view strict
-                , treePrefix = addressPrefix . view strict
+                , treePrefix =
+                    addressPrefix . view strict
                 }
         , hashing = hashHashing
         }
@@ -161,46 +159,95 @@ context =
 addressPrefix :: StrictByteString -> Key
 addressPrefix cborTxOut = byteStringToKey addressBytes
   where
-    addressBytes = case decodeFull (natVersion @11) (view lazy cborTxOut) of
-        Left e -> error $ "addressPrefix: decode failed: " <> show e
-        Right (txOut :: BabbageTxOut ConwayEra) ->
-            fromShort $ unCompactAddr (txOut ^. compactAddrTxOutL)
+    addressBytes =
+        case decodeFull
+            (natVersion @11)
+            (view lazy cborTxOut) of
+            Left e ->
+                error
+                    $ "addressPrefix: decode failed: "
+                        <> show e
+            Right (txOut :: BabbageTxOut ConwayEra) ->
+                fromShort
+                    $ unCompactAddr (txOut ^. compactAddrTxOutL)
+
+-- | Encode a CBOR value to strict 'ByteString'.
+encodeCBOR :: CBOR.Encoding -> StrictByteString
+encodeCBOR = BL.toStrict . CBOR.toLazyByteString
+
+-- | Decode a strict 'ByteString' with a CBOR decoder.
+decodeCBOR
+    :: (forall s. CBOR.Decoder s a)
+    -> StrictByteString
+    -> Maybe a
+decodeCBOR decoder bs =
+    case CBOR.deserialiseFromBytes
+        decoder
+        (BL.fromStrict bs) of
+        Right (_, x) -> Just x
+        Left _ -> Nothing
 
 {- | Prisms for encoding and decoding database values.
 
 Provides bidirectional transformations between Haskell types
 and their binary representations in RocksDB:
 
-  * @slotP@ - Encodes 'Point' as slot number + block hash
+  * @slotP@ - Encodes 'Point' as CBOR
   * @hashP@ - Encodes 'Hash' using the standard iso
   * @keyP@, @valueP@ - Identity transformations for lazy bytestrings
 -}
-prisms :: Prisms Point Hash LazyByteString LazyByteString
+prisms
+    :: Prisms Point Hash LazyByteString LazyByteString
 prisms = Prisms{..}
   where
     slotP :: Prism' StrictByteString Point
     slotP = prism' encode decode
       where
         encode :: Point -> StrictByteString
-        encode (Network.Point Origin) = ""
+        encode (Network.Point Origin) =
+            encodeCBOR
+                $ CBOR.encodeListLen 1
+                    <> CBOR.encodeWord 0
         encode
             ( Network.Point
-                    (At (Network.Block (SlotNo slot) (OneEraHash h)))
-                ) = do
-                evalPutM $ do
-                    putWord64be slot
-                    putWord32be (fromIntegral $ B.length h)
-                    putShortByteString h
+                    ( At
+                            ( Network.Block
+                                    (SlotNo slot)
+                                    (OneEraHash h)
+                                )
+                        )
+                ) =
+                encodeCBOR
+                    $ CBOR.encodeListLen 3
+                        <> CBOR.encodeWord 1
+                        <> CBOR.encodeWord64 slot
+                        <> CBOR.encodeBytes
+                            (fromShort h)
 
-        decode :: StrictByteString -> Maybe Point
-        decode bs
-            | bs == "" = Just $ Network.Point Origin
-            | otherwise = flip evalGetM bs $ do
-                slot <- SlotNo <$> getWord64be
-                len <- fromIntegral <$> getWord32be
-                h <- getShortByteString len
-                return
-                    $ Network.Point (At (Network.Block slot (OneEraHash h)))
+        decode
+            :: StrictByteString -> Maybe Point
+        decode = decodeCBOR $ do
+            len <- CBOR.decodeListLen
+            tag <- CBOR.decodeWord
+            case (tag, len) of
+                (0, 1) ->
+                    pure $ Network.Point Origin
+                (1, 3) -> do
+                    slot <-
+                        SlotNo <$> CBOR.decodeWord64
+                    h <-
+                        OneEraHash
+                            . toShort
+                            <$> CBOR.decodeBytes
+                    pure
+                        $ Network.Point
+                            ( At
+                                (Network.Block slot h)
+                            )
+                _ ->
+                    fail
+                        "slotP: invalid CBOR\
+                        \ encoding"
 
     hashP :: Prism' StrictByteString Hash
     hashP = isoHash
@@ -220,9 +267,13 @@ slotHash
     -- ^ The point to extract the hash from
     -> Hash
     -- ^ The block hash
-slotHash (Network.Point Origin) = error "slotHash: Origin has no hash"
-slotHash (Network.Point (At (Network.Block _ (OneEraHash h)))) =
-    Hash $ fromShort h
+slotHash (Network.Point Origin) =
+    error "slotHash: Origin has no hash"
+slotHash
+    ( Network.Point
+            (At (Network.Block _ (OneEraHash h)))
+        ) =
+        Hash $ fromShort h
 
 -- | Encode a Point to ByteString for config storage
 encodePoint :: Point -> StrictByteString
@@ -243,10 +294,15 @@ mFinality
     -- ^ Database transaction runner
     -> m (Maybe Point)
     -- ^ The finality point, if any
-mFinality (RunTransaction runTx) = runTx $ newFinality isFinal
+mFinality (RunTransaction runTx) =
+    runTx $ newFinality isFinal
   where
-    isFinal :: WithOrigin Point -> WithOrigin Point -> Bool
-    isFinal tip finality = distance tip finality > 2160
+    isFinal
+        :: WithOrigin Point
+        -> WithOrigin Point
+        -> Bool
+    isFinal tip finality =
+        distance tip finality > 2160
 
 {- | Calculate the slot distance between two points.
 
@@ -263,10 +319,17 @@ distance
 distance Origin _ = SlotNo 0
 distance (At (Network.Point Origin)) _ =
     error "distance: tip at Origin has no slot"
-distance (At (Network.Point (At (Network.Block slotTip _)))) Origin =
-    slotTip
 distance
     (At (Network.Point (At (Network.Block slotTip _))))
-    (At (Network.Point (At (Network.Block slotFinality _)))) =
-        SlotNo (unSlotNo slotTip - unSlotNo slotFinality)
-distance _ _ = error "distance: finality at Origin has no slot"
+    Origin = slotTip
+distance
+    (At (Network.Point (At (Network.Block slotTip _))))
+    ( At
+            ( Network.Point
+                    (At (Network.Block slotFinality _))
+                )
+        ) =
+        SlotNo
+            (unSlotNo slotTip - unSlotNo slotFinality)
+distance _ _ =
+    error "distance: finality at Origin has no slot"

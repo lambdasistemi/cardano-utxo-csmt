@@ -68,15 +68,18 @@ import Cardano.UTxOCSMT.Application.Database.Properties.Expected
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
     )
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (preview, prism', review)
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
 import Control.Tracer (nullTracer)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BC
+import Data.ByteString.Lazy qualified as BL
 import Data.Char (isAlpha, isAscii)
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Serialize (getWord64be, putWord64be)
-import Data.Serialize.Extra (evalGetM, evalPutM)
 import Database.RocksDB (Config (..), withDBCF)
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe)
@@ -152,8 +155,19 @@ prisms =
     Prisms
         { slotP =
             prism'
-                (evalPutM . putWord64be . fromIntegral)
-                (fmap fromIntegral . evalGetM getWord64be)
+                ( BL.toStrict
+                    . CBOR.toLazyByteString
+                    . CBOR.encodeWord64
+                    . fromIntegral
+                )
+                ( \bs ->
+                    case CBOR.deserialiseFromBytes
+                        CBOR.decodeWord64
+                        (BL.fromStrict bs) of
+                        Right (_, w) ->
+                            Just (fromIntegral w)
+                        Left _ -> Nothing
+                )
         , hashP = isoHash
         , keyP = id
         , valueP = id

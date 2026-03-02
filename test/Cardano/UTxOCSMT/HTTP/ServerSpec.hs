@@ -55,6 +55,10 @@ import Cardano.UTxOCSMT.HTTP.Base16
     ( encodeBase16Text
     )
 import Cardano.UTxOCSMT.HTTP.Server (apiApp)
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
 import Control.Monad (foldM, foldM_)
 import Control.Monad.IO.Class (liftIO)
@@ -69,8 +73,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
 import Data.List (nub, sort)
-import Data.Serialize (getWord64be, putWord64be)
-import Data.Serialize.Extra (evalGetM, evalPutM)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -111,13 +113,26 @@ type instance TipOf SlotNo = SlotNo
 {- | Test prisms for serializing slots, hashes, keys, values
 Uses SlotNo for slots and ByteString for keys/values (matching RocksDBSpec.hs)
 -}
-testPrisms :: Prisms SlotNo Hash BL.ByteString BL.ByteString
+testPrisms
+    :: Prisms SlotNo Hash BL.ByteString BL.ByteString
 testPrisms =
     Prisms
         { slotP =
             prism'
-                (evalPutM . putWord64be . fromIntegral . unSlotNo)
-                (fmap fromIntegral . evalGetM getWord64be)
+                ( BL.toStrict
+                    . CBOR.toLazyByteString
+                    . CBOR.encodeWord64
+                    . fromIntegral
+                    . unSlotNo
+                )
+                ( \bs ->
+                    case CBOR.deserialiseFromBytes
+                        CBOR.decodeWord64
+                        (BL.fromStrict bs) of
+                        Right (_, w) ->
+                            Just (fromIntegral w)
+                        Left _ -> Nothing
+                )
         , hashP = isoHash
         , keyP = lazy
         , valueP = lazy
