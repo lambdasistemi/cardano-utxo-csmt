@@ -286,6 +286,79 @@ spec = describe "E2E newRocksDBState" $ do
                     ]
             pure ()
 
+    it "empty block stores rollback point when < 2 exist (#112)" $ do
+        withFreshDB $ \update -> do
+            -- Fresh DB: count = 1 (Origin rollback point)
+            -- Empty block at slot 1: count < 2 → must store
+            update1 <-
+                forwardTipApply
+                    update
+                    (SlotNo 1)
+                    (SlotNo 1)
+                    []
+            -- Non-empty block at slot 2 to advance tip beyond slot 1
+            update2 <-
+                forwardTipApply
+                    update1
+                    (SlotNo 2)
+                    (SlotNo 2)
+                    [Insert (mkTestKey "a") (mkTestValue "v")]
+            -- Rollback to slot 1 proves the empty block's
+            -- rollback point was stored
+            state <- rollbackTipApply update2 (At (SlotNo 1))
+            case state of
+                Syncing _ -> pure ()
+                _ ->
+                    fail
+                        "rollback to empty-block slot should succeed"
+
+    it "empty block is skipped when >= 2 rollback points (#112)" $ do
+        withFreshDB $ \update -> do
+            -- Non-empty blocks build count to >= 2
+            update1 <-
+                forwardTipApply
+                    update
+                    (SlotNo 1)
+                    (SlotNo 1)
+                    [ Insert
+                        (mkTestKey "a")
+                        (mkTestValue "v1")
+                    ]
+            -- count = 2 (Origin + slot 1)
+            update2 <-
+                forwardTipApply
+                    update1
+                    (SlotNo 2)
+                    (SlotNo 2)
+                    [ Insert
+                        (mkTestKey "b")
+                        (mkTestValue "v2")
+                    ]
+            -- count = 3; empty slot 3 should be skipped
+            update3 <-
+                forwardTipApply
+                    update2
+                    (SlotNo 3)
+                    (SlotNo 3)
+                    []
+            -- Non-empty slot 4 to advance tip past slot 3
+            update4 <-
+                forwardTipApply
+                    update3
+                    (SlotNo 4)
+                    (SlotNo 4)
+                    [ Insert
+                        (mkTestKey "c")
+                        (mkTestValue "v3")
+                    ]
+            -- Rollback to slot 3 fails: no rollback point stored
+            state <- rollbackTipApply update4 (At (SlotNo 3))
+            case state of
+                Truncating _ -> pure ()
+                _ ->
+                    fail
+                        "rollback to skipped slot should truncate"
+
     it "rollback points are returned on fresh DB" $ do
         withSystemTempDirectory "e2e-rollback-points" $ \dir ->
             withDBCF
