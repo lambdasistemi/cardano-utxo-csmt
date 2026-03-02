@@ -39,6 +39,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
+    , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( mkUpdate
@@ -202,8 +203,7 @@ runRocksDBProperties prop =
     update =
         mkUpdate
             nullTracer
-            fkv
-            h
+            (mkCSMTOps fkv h)
             (const $ mkHash "")
             (\_ _ -> pure ())
             armageddonParams

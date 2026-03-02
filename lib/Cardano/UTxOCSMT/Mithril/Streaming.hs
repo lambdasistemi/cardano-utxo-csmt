@@ -30,15 +30,10 @@ module Cardano.UTxOCSMT.Mithril.Streaming
     )
 where
 
-import CSMT (FromKV, Hashing)
 import Cardano.Ledger.Babbage.TxOut (BabbageTxOut)
 import Cardano.Ledger.Binary (natVersion, serialize)
 import Cardano.Ledger.Conway (ConwayEra)
 import Cardano.Ledger.TxIn (TxIn)
-import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( RunTransaction (..)
-    , insertCSMT
-    )
 import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
 import Data.ByteString.Lazy (ByteString)
@@ -46,7 +41,6 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.MemPack (unpack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import Data.Word (Word64)
-import Database.RocksDB (BatchOp, ColumnFamily)
 import Streaming (Of, Stream)
 import Streaming.Prelude qualified as S
 
@@ -109,19 +103,11 @@ The function:
 streamToCSMT
     :: Tracer IO StreamTrace
     -> StreamConfig
-    -> FromKV ByteString ByteString hash
-    -> Hashing hash
-    -> RunTransaction
-        ColumnFamily
-        BatchOp
-        slot
-        hash
-        ByteString
-        ByteString
-        IO
+    -> (ByteString -> ByteString -> IO ())
+    -- ^ Insert a key-value pair into the CSMT database
     -> Stream (Of (ByteString, ByteString)) IO ()
     -> IO Word64
-streamToCSMT tracer config fkv h runner stream = do
+streamToCSMT tracer config insertCSMT stream = do
     traceWith tracer StreamStarting
     startTime <- getCurrentTime
     count <- processStream startTime 0 0 stream
@@ -129,7 +115,6 @@ streamToCSMT tracer config fkv h runner stream = do
     pure count
   where
     StreamConfig{streamProgressInterval} = config
-    RunTransaction{transact} = runner
 
     processStream
         :: UTCTime
@@ -151,7 +136,7 @@ streamToCSMT tracer config fkv h runner stream = do
                         processStream startTime count (skipped + 1) rest
                     Just (cborKey, cborValue) -> do
                         -- Insert CBOR-encoded bytes into CSMT
-                        transact $ insertCSMT fkv h cborKey cborValue
+                        insertCSMT cborKey cborValue
 
                         let newCount = count + 1
 

@@ -28,8 +28,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
+    , CSMTOps (..)
     , RunTransaction (..)
-    , insertCSMT
+    , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
@@ -69,6 +70,7 @@ runInsertBench utxos =
             ]
             $ \db -> do
                 let CSMTContext{fromKV = fkv, hashing = h} = benchContext
+                    CSMTOps{csmtInsert} = mkCSMTOps fkv h
                 runner@RunTransaction{transact} <-
                     newRunRocksDBTransaction
                         db
@@ -78,7 +80,7 @@ runInsertBench utxos =
                     runner
                     benchArmageddonParams
                 forM_ utxos $ \(k, v) ->
-                    transact $ insertCSMT fkv h k v
+                    transact $ csmtInsert k v
 
 -- | RocksDB configuration
 rocksConfig :: Config

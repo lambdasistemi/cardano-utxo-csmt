@@ -75,9 +75,9 @@ library http
     , base
     , bytestring
     , cardano-utxo-csmt:library
-    , csmt
     , lens
     , memory
+    , mts:csmt
     , network
     , ouroboros-network-api
     , servant-server
@@ -129,12 +129,13 @@ library application
     , containers
     , contra-tracer
     , contra-tracer-contrib
-    , csmt
     , http-client
     , http-client-tls
     , lens
     , memory
     , mtl
+    , mts
+    , mts:csmt
     , network
     , opt-env-conf
     , ouroboros-consensus
@@ -210,6 +211,7 @@ library library
     , cardano-ledger-core
     , cardano-ledger-shelley
     , cardano-read-ledger
+    , cardano-strict-containers
     , cborg
     , cereal
     , comonad
@@ -217,7 +219,6 @@ library library
     , contra-tracer
     , contra-tracer-contrib
     , crypton
-    , csmt
     , directory
     , exceptions
     , filepath
@@ -228,6 +229,8 @@ library library
     , memory
     , mempack
     , mtl
+    , mts
+    , mts:csmt
     , network
     , network-mux
     , opt-env-conf
@@ -247,7 +250,6 @@ library library
     , serialise
     , streaming
     , streaming-bytestring
-    , cardano-strict-containers
     , strict-sop-core
     , strict-stm
     , swagger2
@@ -354,7 +356,6 @@ test-suite unit-tests
     , containers
     , contra-tracer
     , contra-tracer-contrib
-    , csmt
     , hspec
     , http-client
     , http-client-tls
@@ -362,6 +363,8 @@ test-suite unit-tests
     , lens
     , memory
     , mempack
+    , mts
+    , mts:csmt
     , opt-env-conf
     , ouroboros-network-api
     , path
@@ -440,6 +443,7 @@ test-suite e2e-tests
   build-depends:
     , base
     , bytestring
+    , cardano-ledger-byron
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
     , contra-tracer
@@ -468,8 +472,8 @@ benchmark bench
     , cardano-utxo-csmt:library
     , contra-tracer
     , criterion
-    , csmt
     , lens
+    , mts:csmt
     , rocksdb-haskell-jprupp
     , serialise
     , temporary

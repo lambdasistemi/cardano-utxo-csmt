@@ -17,7 +17,6 @@ where
 -- initialization of new databases, and optional bootstrapping from Mithril
 -- snapshots for faster initial sync.
 
-import CSMT (FromKV, Hashing)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams
     , cleanup
@@ -36,8 +35,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
     , setSkipSlot
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( RunTransaction (..)
-    , insertCSMT
+    ( CSMTOps (..)
+    , RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Options (MithrilOptions (..))
 import Cardano.UTxOCSMT.Application.Run.Config
@@ -83,6 +82,7 @@ import Data.Tracer.TraceWith
 import Data.Word (Word16, Word64)
 import Database.KV.Cursor (firstEntry)
 import Database.KV.Transaction (iterating)
+import Database.KV.Transaction qualified as L
 import Database.RocksDB (BatchOp, ColumnFamily)
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
@@ -135,10 +135,17 @@ setupDB
     -- ^ Skip node validation
     -> ArmageddonParams hash
     -- ^ Parameters for database initialization
-    -> FromKV LazyByteString LazyByteString hash
-    -- ^ Key/value codec for CSMT operations
-    -> Hashing hash
-    -- ^ Hashing operations for CSMT
+    -> CSMTOps
+        ( L.Transaction
+            IO
+            ColumnFamily
+            (Columns Point hash LazyByteString LazyByteString)
+            BatchOp
+        )
+        LazyByteString
+        LazyByteString
+        hash
+    -- ^ CSMT operations (insert, delete, root hash)
     -> RunTransaction
         ColumnFamily
         BatchOp
@@ -161,8 +168,7 @@ setupDB
     nodePort
     skipValidation
     armageddonParams
-    fkv
-    h
+    ops
     runner@RunTransaction{transact} = do
         -- Check for incomplete bootstrap and clean up if needed
         incomplete <- transact $ isBootstrapInProgress decodePoint
@@ -273,7 +279,7 @@ setupDB
                 Nothing -> pure []
             let pairs = byronPairs ++ shelleyPairs
             transact $ do
-                forM_ pairs $ \(k, v) -> insertCSMT fkv h k v
+                forM_ pairs $ uncurry (csmtInsert ops)
                 putBaseCheckpoint
                     decodePoint
                     encodePoint
@@ -343,14 +349,13 @@ setupDB
                                     decodePoint
                                     encodePoint
 
+                    let insertIO k v = transact $ csmtInsert ops k v
                     result <-
                         importFromMithril
                             (contramap Mithril tracer)
                             mithrilConfig
                             markBootstrapInProgress
-                            fkv
-                            h
-                            runner
+                            insertIO
 
                     case result of
                         ImportSuccess{importCheckpoint, importSlot} -> do

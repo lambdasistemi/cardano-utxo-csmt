@@ -14,6 +14,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
+    , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createUpdateState
@@ -157,6 +158,7 @@ main = withUtf8 $ do
         withRocksDB dbPath $ \db -> do
             -- Create runner first (no logging)
             let CSMTContext{fromKV = fkv, hashing = h} = context
+                ops = mkCSMTOps fkv h
             runner <-
                 newRunRocksDBTransaction
                     db
@@ -200,8 +202,7 @@ main = withUtf8 $ do
                     setupNodePort
                     setupSkipValidation
                     armageddonParams
-                    fkv
-                    h
+                    ops
                     runner
 
             -- Now create the Update state (logs "New update state")
@@ -214,8 +215,7 @@ main = withUtf8 $ do
             (state, slots) <-
                 createUpdateState
                     (contra Update)
-                    fkv
-                    h
+                    ops
                     slotHash
                     onForward
                     armageddonParams

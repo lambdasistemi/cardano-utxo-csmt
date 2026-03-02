@@ -29,6 +29,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
+    , mkCSMTOps
     , queryByAddress
     , queryMerkleRoot
     )
@@ -295,8 +296,7 @@ withTestDB action =
             action runner
                 $ mkUpdate
                     nullTracer
-                    fkv
-                    h
+                    (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
                     testArmageddonParams
@@ -325,8 +325,7 @@ withTestDBPrefixed action =
             action runner
                 $ mkUpdate
                     nullTracer
-                    fkv
-                    h
+                    (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
                     testArmageddonParams

@@ -29,7 +29,10 @@ import Cardano.UTxOCSMT.Application.Metrics
     ( BootstrapPhase (..)
     , MetricsEvent (..)
     )
-import Cardano.UTxOCSMT.Application.UTxOs (Change (..), uTxOsWithTxCount)
+import Cardano.UTxOCSMT.Application.UTxOs
+    ( Change (..)
+    , uTxOsWithTxCount
+    )
 import Cardano.UTxOCSMT.Ouroboros.Connection (runNodeApplication)
 import Cardano.UTxOCSMT.Ouroboros.ConnectionN2C
     ( runLocalNodeApplication

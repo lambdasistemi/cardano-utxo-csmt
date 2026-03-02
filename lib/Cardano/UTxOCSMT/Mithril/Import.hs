@@ -22,10 +22,6 @@ module Cardano.UTxOCSMT.Mithril.Import
     )
 where
 
-import CSMT (FromKV, Hashing)
-import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( RunTransaction
-    )
 import Cardano.UTxOCSMT.Mithril.Client
     ( MithrilConfig (..)
     , MithrilError
@@ -54,7 +50,6 @@ import Control.Tracer (Tracer, contramap, traceWith)
 import Data.ByteString.Lazy (ByteString)
 import Data.Tracer.TraceWith (trace, tracer, pattern TraceWith)
 import Data.Word (Word64)
-import Database.RocksDB (BatchOp, ColumnFamily)
 import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Point (WithOrigin (..))
 
@@ -146,21 +141,10 @@ importFromMithril
     -- ^ Mithril client configuration
     -> IO ()
     -- ^ Action to run after download succeeds, before DB writes begin
-    -> FromKV ByteString ByteString hash
-    -- ^ Key/value codec for CSMT operations
-    -> Hashing hash
-    -- ^ Hashing operations for CSMT
-    -> RunTransaction
-        ColumnFamily
-        BatchOp
-        Point
-        hash
-        ByteString
-        ByteString
-        IO
-    -- ^ Transaction runner for database operations
+    -> (ByteString -> ByteString -> IO ())
+    -- ^ Insert a key-value pair into the CSMT database
     -> IO ImportResult
-importFromMithril TraceWith{tracer, trace} config onBeforeDbWrite fkv h runner = do
+importFromMithril TraceWith{tracer, trace} config onBeforeDbWrite insertCSMT = do
     trace ImportStarting
 
     -- Step 1: Fetch latest snapshot metadata
@@ -217,9 +201,7 @@ importFromMithril TraceWith{tracer, trace} config onBeforeDbWrite fkv h runner =
                             ( streamToCSMT
                                 (contramap ImportStreaming tracer)
                                 defaultStreamConfig
-                                fkv
-                                h
-                                runner
+                                insertCSMT
                             )
 
                     case extractResult of

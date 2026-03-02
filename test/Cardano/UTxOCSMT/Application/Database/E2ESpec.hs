@@ -23,6 +23,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Prisms (..)
     )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
+    ( mkCSMTOps
+    )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     , State (..)
@@ -116,8 +119,7 @@ withFreshDB action =
                         nullTracer
                         db
                         testPrisms
-                        testFromKV
-                        testHashing
+                        (mkCSMTOps testFromKV testHashing)
                         testSlotHash
                         (\_ _ -> pure ())
                         testArmageddonParams
@@ -231,8 +233,8 @@ spec = describe "E2E newRocksDBState" $ do
         let hex s = case B16.decode (BC.pack s) of
                 Right bs -> bs
                 Left e -> error e
-            txIn txid ix =
-                unsafeMkTxIn (toShort $ hex txid) ix
+            txIn txid =
+                unsafeMkTxIn (toShort $ hex txid)
             -- Preprod tx hashes from Koios
             key366b_0 =
                 txIn
@@ -300,8 +302,7 @@ spec = describe "E2E newRocksDBState" $ do
                             nullTracer
                             db
                             testPrisms
-                            testFromKV
-                            testHashing
+                            (mkCSMTOps testFromKV testHashing)
                             testSlotHash
                             (\_ _ -> pure ())
                             testArmageddonParams
