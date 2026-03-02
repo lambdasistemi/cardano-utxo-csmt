@@ -10,6 +10,9 @@ module Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
     ) where
 
 import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.Node.Client.E2E.Devnet
+    ( withCardanoNode
+    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , mkCSMTOps
@@ -32,9 +35,6 @@ import Cardano.UTxOCSMT.Application.Run.Config
 import Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
     , setupDB
-    )
-import Cardano.UTxOCSMT.E2E.Devnet
-    ( withCardanoNode
     )
 import Cardano.UTxOCSMT.Mithril.Client
     ( MithrilNetwork (..)
@@ -96,7 +96,7 @@ spec = describe "Genesis chain sync" $ do
                     context
                 ops = mkCSMTOps fkv h
             withCardanoNode genesisDir
-                $ \socketPath -> do
+                $ \socketPath _startMs -> do
                     withSystemTempDirectory
                         "e2e-db"
                         $ \dbPath -> do

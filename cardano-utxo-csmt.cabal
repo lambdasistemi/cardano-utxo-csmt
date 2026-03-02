@@ -410,6 +410,7 @@ test-suite cardano-utxo-csmt-integration-test
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-node-clients
+    , cardano-node-clients:devnet
     , containers
     , directory
     , filepath
@@ -424,9 +425,7 @@ test-suite cardano-utxo-csmt-integration-test
   type:               exitcode-stdio-1.0
   main-is:            main.hs
   other-modules:
-    Cardano.Node.Client.E2E.Devnet
     Cardano.Node.Client.E2E.ProviderSpec
-    Cardano.Node.Client.E2E.Setup
     Cardano.Node.Client.E2E.SubmitterSpec
 
 test-suite e2e-tests
@@ -436,14 +435,12 @@ test-suite e2e-tests
   type:             exitcode-stdio-1.0
   hs-source-dirs:   e2e-test
   main-is:          main.hs
-  other-modules:
-    Cardano.UTxOCSMT.E2E.Devnet
-    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
-
+  other-modules:    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
   build-depends:
     , base
     , bytestring
     , cardano-ledger-byron
+    , cardano-node-clients:devnet
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
     , contra-tracer
