@@ -21,8 +21,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
+    , CSMTOps (..)
     , RunTransaction (..)
-    , insertCSMT
+    , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
@@ -66,6 +67,7 @@ spec = describe "Mithril Import" $ do
 
                     -- Set up database with armageddon
                     let CSMTContext{fromKV = fkv, hashing = h} = csmtContext
+                        CSMTOps{csmtInsert} = mkCSMTOps fkv h
                     runner <- newRunRocksDBTransaction db prisms
                     setup nullTracer runner armageddonParams
 
@@ -73,13 +75,14 @@ spec = describe "Mithril Import" $ do
 
                     -- Insert all UTxOs from golden file
                     forM_ utxos $ \(k, v) ->
-                        transact $ insertCSMT fkv h k v
+                        transact $ csmtInsert k v
 
         it "handles empty import gracefully" $ do
             withSystemTempDirectory "import-test-empty" $ \tmpDir ->
                 withRocksDB tmpDir $ \(RunRocksDB r) -> do
                     db <- r ask
                     let CSMTContext{fromKV = fkv, hashing = h} = csmtContext
+                        CSMTOps{csmtInsert} = mkCSMTOps fkv h
                     runner <- newRunRocksDBTransaction db prisms
                     setup nullTracer runner armageddonParams
 
@@ -88,7 +91,7 @@ spec = describe "Mithril Import" $ do
                         emptyUtxos = []
 
                     forM_ emptyUtxos $ \(k, v) ->
-                        transact $ insertCSMT fkv h k v
+                        transact $ csmtInsert k v
 
 -- | CSMT context for hashing
 csmtContext :: CSMTContext Hash ByteString ByteString

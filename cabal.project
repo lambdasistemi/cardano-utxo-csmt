@@ -25,9 +25,9 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/paolino/haskell-csmt
-  tag: e46ef731076cf0884d5ed0f047d0dd74e622aea8
-  --sha256: 00rmqxffkdpr4jbbz3s9pw5bqmb97jgkxzg5m235n9l364m748c0
+  location: https://github.com/paolino/haskell-mts
+  tag: e876bea60e7a4d00a4966252fac0132ad0645656
+  --sha256: 0c2ffvr3dvv6dxy0gyhwvv5424xa600cgcd5gcvms4z2xw5d249m
 
 source-repository-package
   type: git

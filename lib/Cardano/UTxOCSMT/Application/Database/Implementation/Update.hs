@@ -16,7 +16,6 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     )
 where
 
-import CSMT (FromKV, Hashing)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams
     , ArmageddonTrace
@@ -31,10 +30,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     , RollbackPointKV
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( RunTransaction (..)
-    , deleteCSMT
-    , insertCSMT
-    , queryMerkleRoot
+    ( CSMTOps (..)
+    , RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -107,8 +104,11 @@ renderUpdateTrace (UpdateNewState slots) =
 newState
     :: (Ord key, Ord slot, Show slot, MonadFail m)
     => Tracer m (UpdateTrace slot hash)
-    -> FromKV key value hash
-    -> Hashing hash
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward; use to check if at tip and emit Synced
@@ -117,8 +117,7 @@ newState
     -> m (Update m slot key value, [slot])
 newState
     TraceWith{tracer, trace}
-    fkv
-    h
+    ops
     slotHash
     onForward
     armageddonParams
@@ -130,8 +129,7 @@ newState
             $ (,cps)
             $ mkUpdate
                 tracer
-                fkv
-                h
+                ops
                 slotHash
                 onForward
                 armageddonParams
@@ -143,8 +141,11 @@ We compose csmt transactions for each operation with an updateRollbackPoint one
 forwardTip
     :: (Ord key, Ord slot, Show slot, MonadFail m)
     => Tracer m (UpdateTrace slot hash)
-    -> FromKV key value hash
-    -> Hashing hash
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
     -> hash
     -> slot
     -- ^ slot at which operations happen
@@ -153,8 +154,7 @@ forwardTip
     -> Transaction m cf (Columns slot hash key value) op ()
 forwardTip
     TraceWith{trace}
-    fkv
-    h
+    CSMTOps{csmtInsert, csmtDelete, csmtRootHash}
     hash
     slot
     ops = do
@@ -164,11 +164,11 @@ forwardTip
         when (At slot > tip && not (null ops)) $ do
             result <- forM (zip [0 :: Int ..] ops) $ \case
                 (_, Insert k v) -> do
-                    insertCSMT fkv h k v
+                    csmtInsert k v
                     pure (Sum 1, Sum 0, [Delete k])
                 (i, Delete k) -> do
                     mx <- query KVCol k
-                    deleteCSMT fkv h k
+                    csmtDelete k
                     case mx of
                         Nothing ->
                             error
@@ -179,19 +179,21 @@ forwardTip
                                     <> show i
                         Just x -> pure (Sum 0, Sum 1, [Insert k x])
             let (Sum nInserts, Sum nDeletes, invs) = mconcat result
-            merkleRoot <- updateRollbackPoint h hash slot $ reverse invs
+            merkleRoot <-
+                updateRollbackPoint csmtRootHash hash slot $ reverse invs
             lift . lift . trace
                 $ UpdateForwardTip slot nInserts nDeletes merkleRoot
 
 updateRollbackPoint
     :: (Ord slot, Monad m)
-    => Hashing hash
+    => Transaction m cf (Columns slot hash key value) op (Maybe hash)
+    -- ^ Root hash query
     -> hash
     -> slot
     -> [Operation key value]
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
-updateRollbackPoint h pointHash pointSlot rbpInverseOperations = do
-    rpbMerkleRoot <- queryMerkleRoot h
+updateRollbackPoint rootHashQuery pointHash pointSlot rbpInverseOperations = do
+    rpbMerkleRoot <- rootHashQuery
     insert RollbackPoints (At pointSlot)
         $ RollbackPoint
             { rbpHash = pointHash
@@ -219,15 +221,18 @@ keepAts = flip foldr [] $ \case
     At x -> (x :)
 
 rollbackRollbackPoint
-    :: (Ord key, Monad m)
-    => FromKV key value hash
-    -> Hashing hash
+    :: Monad m
+    => CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
     -> RollbackPoint slot hash key value
     -> Transaction m cf (Columns slot hash key value) op ()
-rollbackRollbackPoint fkv h RollbackPoint{rbpInverseOperations} =
+rollbackRollbackPoint CSMTOps{csmtInsert, csmtDelete} RollbackPoint{rbpInverseOperations} =
     forM_ rbpInverseOperations $ \case
-        Insert k v -> insertCSMT fkv h k v
-        Delete k -> deleteCSMT fkv h k
+        Insert k v -> csmtInsert k v
+        Delete k -> csmtDelete k
 
 -- | Result of a rollback attempt. Just a mirror, without continuation of 'Interface.State'
 data RollbackResult
@@ -246,13 +251,16 @@ If the exact rollback point is not found, we return a list of available rollback
 If the list is empty, rollback is impossible and the database should be truncated
 -}
 rollbackTip
-    :: (Ord slot, Ord key, MonadFail m)
-    => FromKV key value hash
-    -> Hashing hash
+    :: (Ord slot, MonadFail m)
+    => CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
     -> slot
     -- ^ Slot to rollback to
     -> Transaction m cf (Columns slot hash key value) op RollbackResult
-rollbackTip fkv h slot = do
+rollbackTip ops slot = do
     tip <- queryTip
     if At slot > tip
         then pure RollbackSucceeded
@@ -268,7 +276,7 @@ rollbackTip fkv h slot = do
                             Just Entry{entryKey, entryValue} ->
                                 when (entryKey > At slot) $ do
                                     lift $ do
-                                        rollbackRollbackPoint fkv h entryValue
+                                        rollbackRollbackPoint ops entryValue
                                         delete RollbackPoints entryKey
                                     prevEntry >>= go
                         pure RollbackSucceeded
@@ -297,8 +305,11 @@ of continuations and so always propose itself as the next continuation
 mkUpdate
     :: (Ord key, Ord slot, Show slot, MonadFail m)
     => Tracer m (UpdateTrace slot hash)
-    -> FromKV key value hash
-    -> Hashing hash
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward; use to check if at tip and emit Synced
@@ -309,21 +320,21 @@ mkUpdate
     -> Update m slot key value
 mkUpdate
     TraceWith{tracer, contra}
-    fkv
-    h
+    ops
     slotHash
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact} =
         fix $ \cont ->
             Update
-                { forwardTipApply = \slot chainTip ops -> do
-                    transact $ forwardTip tracer fkv h (slotHash slot) slot ops
+                { forwardTipApply = \slot chainTip operations -> do
+                    transact
+                        $ forwardTip tracer ops (slotHash slot) slot operations
                     onForward slot chainTip
                     pure cont
                 , rollbackTipApply = \case
-                    At slot -> do
-                        r <- transact $ rollbackTip fkv h slot
+                    At s -> do
+                        r <- transact $ rollbackTip ops s
                         case r of
                             RollbackSucceeded -> pure $ Syncing cont
                             -- RollbackFailedButPossible slots -> pure $ Intersecting slots cont
@@ -333,9 +344,9 @@ mkUpdate
                     Origin -> do
                         armageddonCall
                         pure $ Syncing cont
-                , forwardFinalityApply = \slot ->
+                , forwardFinalityApply = \s ->
                     transact
-                        $ forwardFinality slot >> pure cont
+                        $ forwardFinality s >> pure cont
                 }
       where
         armageddonCall =

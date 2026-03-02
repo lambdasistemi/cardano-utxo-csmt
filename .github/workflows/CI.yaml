@@ -16,6 +16,8 @@ jobs:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Build executable
         run: nix build .#cardano-utxo --quiet
+      - name: Build e2e-tests
+        run: nix build .#e2e-tests --quiet
       - name: Build docker image
         run: nix build .#docker-image -o output-docker-image --quiet
       - name: Upload Artifact
@@ -73,7 +75,22 @@ jobs:
         with:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Check Formatting
-        run: nix develop --quiet -c just format
+        run: |
+          nix develop --quiet -c just format
+          if ! git diff --exit-code --quiet; then
+            echo "Code formatting is out of date. Please run 'just format' and commit the changes."
+            exit 1
+          fi
+  hlint:
+    name: HLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: paolino/dev-assets/setup-nix@v0.0.1
+        with:
+          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: Run HLint
+        run: nix develop --quiet -c just hlint
   e2e:
     name: N2C E2E test
     needs: build

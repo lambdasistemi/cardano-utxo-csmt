@@ -88,7 +88,9 @@ queryDB dbPath txIdBytes mIndex = do
         , ("config", config)
         ]
         $ \db -> do
-            let kvCF = columnFamilies db !! 0
+            kvCF <- case columnFamilies db of
+                (cf : _) -> pure cf
+                [] -> fail "no column families"
             mapM_ (queryIndex db kvCF txIdBytes) indices
 
 queryIndex

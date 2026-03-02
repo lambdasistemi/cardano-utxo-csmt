@@ -12,6 +12,7 @@ module Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
+    , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createUpdateState
@@ -93,6 +94,7 @@ spec = describe "Genesis chain sync" $ do
         $ do
             let CSMTContext{fromKV = fkv, hashing = h} =
                     context
+                ops = mkCSMTOps fkv h
             withCardanoNode genesisDir
                 $ \socketPath -> do
                     withSystemTempDirectory
@@ -118,14 +120,12 @@ spec = describe "Genesis chain sync" $ do
                                             0
                                             True
                                             armageddonParams
-                                            fkv
-                                            h
+                                            ops
                                             runner
                                     (state, slots) <-
                                         createUpdateState
                                             nullTracer
-                                            fkv
-                                            h
+                                            ops
                                             slotHash
                                             (\_ _ -> pure ())
                                             armageddonParams

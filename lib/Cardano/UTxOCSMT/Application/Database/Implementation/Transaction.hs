@@ -1,8 +1,8 @@
 module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
     , CSMTContext (..)
-    , insertCSMT
-    , deleteCSMT
+    , CSMTOps (..)
+    , mkCSMTOps
     , queryMerkleRoot
     , queryByAddress
     )
@@ -35,24 +35,32 @@ data CSMTContext hash key value = CSMTContext
     , hashing :: Hashing hash
     }
 
-insertCSMT
-    :: (Monad m, Ord key)
-    => FromKV key value hash
-    -> Hashing hash
-    -> key
-    -> value
-    -> Transaction m cf (Columns slot hash key value) op ()
-insertCSMT fkv h k v =
-    inserting fkv h KVCol CSMTCol k v
+{- | Transaction-level CSMT operations, closing over 'FromKV' and 'Hashing'.
+Serves the same role as 'MerkleTreeStore' from MTS but operates within
+the generic 'Transaction' monad with 'Columns'.
+-}
+data CSMTOps m key value hash = CSMTOps
+    { csmtInsert :: key -> value -> m ()
+    , csmtDelete :: key -> m ()
+    , csmtRootHash :: m (Maybe hash)
+    }
 
-deleteCSMT
+-- | Construct 'CSMTOps' from 'FromKV' and 'Hashing', closing over them.
+mkCSMTOps
     :: (Monad m, Ord key)
     => FromKV key value hash
     -> Hashing hash
-    -> key
-    -> Transaction m cf (Columns slot hash key value) op ()
-deleteCSMT fkv h k =
-    deleting fkv h KVCol CSMTCol k
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+mkCSMTOps fkv h =
+    CSMTOps
+        { csmtInsert = inserting fkv h KVCol CSMTCol
+        , csmtDelete = deleting fkv h KVCol CSMTCol
+        , csmtRootHash = root h CSMTCol
+        }
 
 queryMerkleRoot
     :: Monad m

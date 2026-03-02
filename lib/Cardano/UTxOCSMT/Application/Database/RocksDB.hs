@@ -18,7 +18,6 @@ module Cardano.UTxOCSMT.Application.Database.RocksDB
     )
 where
 
-import CSMT (FromKV, Hashing)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams
     , setup
@@ -29,7 +28,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     , codecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( RunTransaction (..)
+    ( CSMTOps
+    , RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( UpdateTrace
@@ -88,12 +88,22 @@ newRunTransaction db prisms =
         $ codecs prisms
 
 newRocksDBState
-    :: (MonadUnliftIO m, MonadFail m, Ord key, Ord slot, Show slot, MonadMask m)
+    :: ( MonadUnliftIO m
+       , MonadFail m
+       , Ord key
+       , Ord slot
+       , Show slot
+       , MonadMask m
+       )
     => Tracer m (UpdateTrace slot hash)
     -> DB
     -> Prisms slot hash key value
-    -> FromKV key value hash
-    -> Hashing hash
+    -> CSMTOps
+        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
+        key
+        value
+        hash
+    -- ^ CSMT operations (insert, delete, root hash)
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward; use to check if at tip and emit Synced
@@ -106,31 +116,34 @@ newRocksDBState
     tracer
     db
     prisms
-    fkv
-    h
+    ops
     slotHash
     onForward
     armageddonParams = do
         runner <- newRunRocksDBTransaction db prisms
         ensureInitialized runner armageddonParams
         (,runner)
-            <$> newState tracer fkv h slotHash onForward armageddonParams runner
+            <$> newState tracer ops slotHash onForward armageddonParams runner
 
 -- | Create Update state from an existing runner
 createUpdateState
     :: (MonadFail m, Ord key, Ord slot, Show slot)
     => Tracer m (UpdateTrace slot hash)
-    -> FromKV key value hash
-    -> Hashing hash
+    -> CSMTOps
+        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
+        key
+        value
+        hash
+    -- ^ CSMT operations (insert, delete, root hash)
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward; use to check if at tip and emit Synced
     -> ArmageddonParams hash
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
     -> m (Update m slot key value, [slot])
-createUpdateState tracer fkv h slotHash onForward armageddonParams runner = do
+createUpdateState tracer ops slotHash onForward armageddonParams runner = do
     ensureInitialized runner armageddonParams
-    newState tracer fkv h slotHash onForward armageddonParams runner
+    newState tracer ops slotHash onForward armageddonParams runner
 
 {- | Ensure the database has been initialized with an Origin rollback point.
 This makes the public API self-initializing so callers can't forget to
