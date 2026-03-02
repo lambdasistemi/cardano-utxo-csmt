@@ -200,13 +200,15 @@ runRocksDBProperties prop =
     query db =
         mkTransactionedQuery (isoK fkv)
             <$> newRunRocksDBTransaction db prisms
-    update =
+    update runner =
         mkUpdate
             nullTracer
             (mkCSMTOps fkv h)
             (const $ mkHash "")
             (\_ _ -> pure ())
             armageddonParams
+            runner
+            0
 
 test
     :: PropertyWithExpected

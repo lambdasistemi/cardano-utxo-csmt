@@ -11,6 +11,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , updateRollbackPoint
     , rollbackTip
     , sampleRollbackPoints
+    , countRollbackPoints
     , newState
     , newFinality
     )
@@ -39,7 +40,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
 import Data.Function (fix)
@@ -122,8 +123,17 @@ newState
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact} = do
-        cps <-
-            transact $ iterating RollbackPoints sampleRollbackPoints
+        (cps, rollbackCount) <-
+            transact $ do
+                cps <-
+                    iterating
+                        RollbackPoints
+                        sampleRollbackPoints
+                rollbackCount <-
+                    iterating
+                        RollbackPoints
+                        countRollbackPoints
+                pure (cps, rollbackCount)
         trace $ UpdateNewState cps
         pure
             $ (,cps)
@@ -134,6 +144,7 @@ newState
                 onForward
                 armageddonParams
                 runTransaction
+                rollbackCount
 
 {- | Apply forward tip .
 We compose csmt transactions for each operation with an updateRollbackPoint one
@@ -147,42 +158,68 @@ forwardTip
         value
         hash
     -> hash
+    -> Int
+    -- ^ rollback point count
     -> slot
     -- ^ slot at which operations happen
     -> [Operation key value]
     -- ^ operations to apply
-    -> Transaction m cf (Columns slot hash key value) op ()
+    -> Transaction
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        Bool
 forwardTip
     TraceWith{trace}
     CSMTOps{csmtInsert, csmtDelete, csmtRootHash}
     hash
+    count
     slot
     ops = do
         tip <- queryTip
-        -- TODO: #112 — use rollback point counter instead of
-        -- dropping all empty blocks unconditionally
-        when (At slot > tip && not (null ops)) $ do
-            result <- forM (zip [0 :: Int ..] ops) $ \case
-                (_, Insert k v) -> do
-                    csmtInsert k v
-                    pure (Sum 1, Sum 0, [Delete k])
-                (i, Delete k) -> do
-                    mx <- query KVCol k
-                    csmtDelete k
-                    case mx of
-                        Nothing ->
-                            error
-                                $ "forwardTip: cannot invert Delete"
-                                    <> " at slot "
-                                    <> show slot
-                                    <> " op #"
-                                    <> show i
-                        Just x -> pure (Sum 0, Sum 1, [Insert k x])
-            let (Sum nInserts, Sum nDeletes, invs) = mconcat result
-            merkleRoot <-
-                updateRollbackPoint csmtRootHash hash slot $ reverse invs
-            lift . lift . trace
-                $ UpdateForwardTip slot nInserts nDeletes merkleRoot
+        if At slot > tip
+            && (not (null ops) || count < 2)
+            then do
+                result <-
+                    forM (zip [0 :: Int ..] ops) $ \case
+                        (_, Insert k v) -> do
+                            csmtInsert k v
+                            pure (Sum 1, Sum 0, [Delete k])
+                        (i, Delete k) -> do
+                            mx <- query KVCol k
+                            csmtDelete k
+                            case mx of
+                                Nothing ->
+                                    error
+                                        $ "forwardTip: cannot"
+                                            <> " invert Delete"
+                                            <> " at slot "
+                                            <> show slot
+                                            <> " op #"
+                                            <> show i
+                                Just x ->
+                                    pure
+                                        ( Sum 0
+                                        , Sum 1
+                                        , [Insert k x]
+                                        )
+                let (Sum nInserts, Sum nDeletes, invs) =
+                        mconcat result
+                merkleRoot <-
+                    updateRollbackPoint
+                        csmtRootHash
+                        hash
+                        slot
+                        $ reverse invs
+                lift . lift . trace
+                    $ UpdateForwardTip
+                        slot
+                        nInserts
+                        nDeletes
+                        merkleRoot
+                pure True
+            else pure False
 
 updateRollbackPoint
     :: (Ord slot, Monad m)
@@ -214,6 +251,21 @@ sampleRollbackPoints = do
         Just h -> do
             rest <- sampleAtFibonacciIntervals prevEntry
             pure $ keepAts . fmap entryKey $ h : rest
+
+-- | Count total rollback points in the DB.
+countRollbackPoints
+    :: Monad m
+    => Cursor
+        (Transaction m cf (Columns slot hash key value) op)
+        (RollbackPointKV slot hash key value)
+        Int
+countRollbackPoints = do
+    me <- firstEntry
+    ($ me) $ fix $ \go current -> case current of
+        Nothing -> pure 0
+        Just _ -> do
+            next <- nextEntry
+            (+ 1) <$> go next
 
 keepAts :: [WithOrigin a] -> [a]
 keepAts = flip foldr [] $ \case
@@ -259,48 +311,66 @@ rollbackTip
         hash
     -> slot
     -- ^ Slot to rollback to
-    -> Transaction m cf (Columns slot hash key value) op RollbackResult
+    -> Transaction
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        (RollbackResult, Int)
 rollbackTip ops slot = do
     tip <- queryTip
     if At slot > tip
-        then pure RollbackSucceeded
+        then pure (RollbackSucceeded, 0)
         else iterating RollbackPoints $ do
             me <- seekKey $ At slot
             case me of
                 Just (Entry (At foundSlot) RollbackPoint{})
                     | foundSlot == slot -> do
                         ml <- lastEntry
-                        ($ ml) $ fix $ \go current -> case current of
-                            Nothing ->
-                                lift . lift $ fail "rollbackTipApply: inconsistent rollback points"
-                            Just Entry{entryKey, entryValue} ->
-                                when (entryKey > At slot) $ do
-                                    lift $ do
-                                        rollbackRollbackPoint ops entryValue
-                                        delete RollbackPoints entryKey
-                                    prevEntry >>= go
-                        pure RollbackSucceeded
-                    | otherwise -> pure RollbackImpossible
-                -- RollbackFailedButPossible . keepAts <$> sampleRollbackPoints
-                _ -> pure RollbackImpossible
+                        deleted <-
+                            ($ ml) $ fix $ \go current ->
+                                case current of
+                                    Nothing ->
+                                        lift . lift
+                                            $ fail
+                                                "rollbackTipApply: inconsistent rollback points"
+                                    Just Entry{entryKey, entryValue}
+                                        | entryKey > At slot -> do
+                                            lift $ do
+                                                rollbackRollbackPoint
+                                                    ops
+                                                    entryValue
+                                                delete
+                                                    RollbackPoints
+                                                    entryKey
+                                            prev <- prevEntry
+                                            (+ 1) <$> go prev
+                                        | otherwise -> pure 0
+                        pure (RollbackSucceeded, deleted)
+                    | otherwise ->
+                        pure (RollbackImpossible, 0)
+                _ -> pure (RollbackImpossible, 0)
 
 -- | Apply forward finality .
 forwardFinality
     :: (Ord slot, Monad m)
     => slot
-    -> Transaction m cf (Columns slot hash key value) op ()
+    -> Transaction m cf (Columns slot hash key value) op Int
 forwardFinality slot = do
     iterating RollbackPoints $ do
         me <- firstEntry
         ($ me) $ fix $ \go current ->
             case current of
-                Nothing -> pure ()
-                Just Entry{entryKey} -> when (entryKey < At slot) $ do
-                    lift $ delete RollbackPoints entryKey
-                    nextEntry >>= go
+                Nothing -> pure 0
+                Just Entry{entryKey}
+                    | entryKey < At slot -> do
+                        lift $ delete RollbackPoints entryKey
+                        next <- nextEntry
+                        (+ 1) <$> go next
+                    | otherwise -> pure 0
 
-{- | Create an database update state object. This implementation does not take advantage
-of continuations and so always propose itself as the next continuation
+{- | Create a database update state object that threads a
+rollback point counter through each continuation.
 -}
 mkUpdate
     :: (Ord key, Ord slot, Show slot, MonadFail m)
@@ -312,11 +382,13 @@ mkUpdate
         hash
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
-    -- ^ Called after each forward; use to check if at tip and emit Synced
+    -- ^ Called after each forward
     -> ArmageddonParams hash
-    -- ^ Armageddon parameters, in case rollback is impossible
+    -- ^ Armageddon parameters
     -> RunTransaction cf op slot hash key value m
     -- ^ Function to run a transaction
+    -> Int
+    -- ^ Initial rollback point count
     -> Update m slot key value
 mkUpdate
     TraceWith{tracer, contra}
@@ -325,30 +397,53 @@ mkUpdate
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact} =
-        fix $ \cont ->
+        go
+      where
+        go count =
             Update
-                { forwardTipApply = \slot chainTip operations -> do
-                    transact
-                        $ forwardTip tracer ops (slotHash slot) slot operations
-                    onForward slot chainTip
-                    pure cont
+                { forwardTipApply =
+                    \slot chainTip operations -> do
+                        stored <-
+                            transact
+                                $ forwardTip
+                                    tracer
+                                    ops
+                                    (slotHash slot)
+                                    count
+                                    slot
+                                    operations
+                        onForward slot chainTip
+                        pure
+                            $ go
+                            $ if stored
+                                then count + 1
+                                else count
                 , rollbackTipApply = \case
                     At s -> do
-                        r <- transact $ rollbackTip ops s
+                        (r, deleted) <-
+                            transact
+                                $ rollbackTip ops s
                         case r of
-                            RollbackSucceeded -> pure $ Syncing cont
-                            -- RollbackFailedButPossible slots -> pure $ Intersecting slots cont
+                            RollbackSucceeded ->
+                                pure
+                                    $ Syncing
+                                    $ go
+                                        (count - deleted)
                             RollbackImpossible -> do
                                 armageddonCall
-                                pure $ Truncating cont
+                                pure
+                                    $ Truncating
+                                    $ go 0
                     Origin -> do
                         armageddonCall
-                        pure $ Syncing cont
-                , forwardFinalityApply = \s ->
-                    transact
-                        $ forwardFinality s >> pure cont
+                        pure $ Syncing $ go 0
+                , forwardFinalityApply = \s -> do
+                    pruned <-
+                        transact
+                            $ forwardFinality s
+                    pure
+                        $ go (count - pruned)
                 }
-      where
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)

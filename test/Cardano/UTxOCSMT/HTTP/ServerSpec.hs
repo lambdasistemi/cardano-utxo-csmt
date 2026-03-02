@@ -301,6 +301,7 @@ withTestDB action =
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
+                    0
 
 -- | Run tests with a fresh RocksDB database using address-prefixed CSMT
 withTestDBPrefixed
@@ -330,6 +331,7 @@ withTestDBPrefixed action =
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
+                    0
 
 -- | Open RocksDB with test column families
 withRocksDB :: FilePath -> (DB -> IO b) -> IO b
