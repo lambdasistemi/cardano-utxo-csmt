@@ -6,7 +6,10 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 where
 
-import CSMT.Interface (Indirect, Key, csmtCodecs)
+import CSMT.Interface (Indirect, Key)
+import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
+    ( csmtCBORCodecs
+    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( RollbackPointKV
     , rollbackPointPrism
@@ -87,7 +90,7 @@ codecs
 codecs Prisms{keyP, hashP, slotP, valueP} =
     fromList
         [ KVCol :=> Codecs{keyCodec = keyP, valueCodec = valueP}
-        , CSMTCol :=> csmtCodecs hashP
+        , CSMTCol :=> csmtCBORCodecs hashP
         , RollbackPoints
             :=> Codecs
                 { keyCodec = withOriginPrism slotP

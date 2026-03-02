@@ -9,21 +9,19 @@ where
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     )
-import Control.Lens (Prism', preview, prism', review)
-import Control.Monad (forM_, replicateM)
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as B
-import Data.Serialize
-    ( Get
-    , PutM
-    , getByteString
-    , getWord32be
-    , getWord8
-    , putByteString
-    , putWord32be
-    , putWord8
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
+import Control.Lens
+    ( Prism'
+    , preview
+    , prism'
+    , review
     )
-import Data.Serialize.Extra (evalGetM, evalPutM)
+import Control.Monad (replicateM)
+import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as BL
 import Database.KV.Transaction (KV)
 import Ouroboros.Network.Point (WithOrigin (..))
 
@@ -36,21 +34,40 @@ data RollbackPoint slot hash key value = RollbackPoint
 
 -- | Type alias for the KV column storing rollback points
 type RollbackPointKV slot hash key value =
-    KV (WithOrigin slot) (RollbackPoint slot hash key value)
+    KV
+        (WithOrigin slot)
+        (RollbackPoint slot hash key value)
 
-putReview :: Prism' ByteString a -> a -> PutM ()
-putReview p x = do
-    let y = review p x
-        l = B.length y
-    putWord32be $ fromIntegral l
-    putByteString y
+-- | Encode a CBOR value to strict 'ByteString'.
+encodeCBOR :: CBOR.Encoding -> ByteString
+encodeCBOR = BL.toStrict . CBOR.toLazyByteString
 
-getPreview :: Prism' ByteString a -> Get a
-getPreview p = do
-    bs <- getWord32be >>= getByteString . fromIntegral
+-- | Decode a strict 'ByteString' with a CBOR decoder.
+decodeCBOR
+    :: (forall s. CBOR.Decoder s a)
+    -> ByteString
+    -> Maybe a
+decodeCBOR decoder bs =
+    case CBOR.deserialiseFromBytes
+        decoder
+        (BL.fromStrict bs) of
+        Right (_, x) -> Just x
+        Left _ -> Nothing
+
+-- | Encode a prism-encoded value as CBOR bytes.
+encodeReview
+    :: Prism' ByteString a -> a -> CBOR.Encoding
+encodeReview p x = CBOR.encodeBytes (review p x)
+
+-- | Decode a prism-encoded value from CBOR bytes.
+decodePreview
+    :: Prism' ByteString a -> CBOR.Decoder s a
+decodePreview p = do
+    bs <- CBOR.decodeBytes
     case preview p bs of
         Just x -> pure x
-        Nothing -> fail "getPreview: prism decoding failed"
+        Nothing ->
+            fail "decodePreview: prism decoding failed"
 
 -- | Prism for serializing/deserializing RollbackPoint
 rollbackPointPrism
@@ -58,52 +75,91 @@ rollbackPointPrism
      . Prism' ByteString hash
     -> Prism' ByteString key
     -> Prism' ByteString value
-    -> Prism' ByteString (RollbackPoint slot hash key value)
+    -> Prism'
+        ByteString
+        (RollbackPoint slot hash key value)
 rollbackPointPrism hashPrism keyPrism valuePrism =
     prism' encode decode
   where
-    encode :: RollbackPoint slot hash key value -> ByteString
-    encode RollbackPoint{rbpHash, rbpInverseOperations, rpbMerkleRoot} =
-        evalPutM $ do
-            putReview hashPrism rbpHash
-            let opsCount = fromIntegral (length rbpInverseOperations)
-            putWord32be opsCount
-            forM_ rbpInverseOperations $ \case
-                Delete k -> do
-                    putWord8 0
-                    putReview keyPrism k
-                Insert k v -> do
-                    putWord8 1
-                    putReview keyPrism k
-                    putReview valuePrism v
-            case rpbMerkleRoot of
-                Nothing -> putWord8 0
-                Just h -> do
-                    putWord8 1
-                    putReview hashPrism h
+    encode
+        :: RollbackPoint slot hash key value
+        -> ByteString
+    encode
+        RollbackPoint
+            { rbpHash
+            , rbpInverseOperations
+            , rpbMerkleRoot
+            } =
+            encodeCBOR
+                $ CBOR.encodeListLen 3
+                    <> encodeReview hashPrism rbpHash
+                    <> encodeOps rbpInverseOperations
+                    <> encodeMaybe rpbMerkleRoot
 
-    decode :: ByteString -> Maybe (RollbackPoint slot hash key value)
-    decode = evalGetM $ do
-        rbpHash <- getPreview hashPrism
-        opsCount <- getWord32be
-        rbpInverseOperations <- replicateM (fromIntegral opsCount) $ do
-            tag <- getWord8
-            case tag of
-                0 -> do
-                    k <- getPreview keyPrism
-                    pure $ Delete k
-                1 -> do
-                    k <- getPreview keyPrism
-                    v <- getPreview valuePrism
-                    pure $ Insert k v
-                _ -> fail "mkRollbackPointCodecs: invalid operation tag"
-        mbTag <- getWord8
-        rpbMerkleRoot <- case mbTag of
+    encodeOps :: [Operation key value] -> CBOR.Encoding
+    encodeOps ops =
+        CBOR.encodeListLen
+            (fromIntegral $ length ops)
+            <> foldMap encodeOp ops
+
+    encodeOp :: Operation key value -> CBOR.Encoding
+    encodeOp (Delete k) =
+        CBOR.encodeListLen 2
+            <> CBOR.encodeWord 0
+            <> encodeReview keyPrism k
+    encodeOp (Insert k v) =
+        CBOR.encodeListLen 3
+            <> CBOR.encodeWord 1
+            <> encodeReview keyPrism k
+            <> encodeReview valuePrism v
+
+    encodeMaybe :: Maybe hash -> CBOR.Encoding
+    encodeMaybe Nothing = CBOR.encodeListLen 0
+    encodeMaybe (Just h) =
+        CBOR.encodeListLen 1
+            <> encodeReview hashPrism h
+
+    decode
+        :: ByteString
+        -> Maybe
+            (RollbackPoint slot hash key value)
+    decode = decodeCBOR $ do
+        _ <- CBOR.decodeListLen
+        rbpHash <- decodePreview hashPrism
+        opsLen <- CBOR.decodeListLen
+        rbpInverseOperations <-
+            replicateM opsLen decodeOp
+        mbLen <- CBOR.decodeListLen
+        rpbMerkleRoot <- case mbLen of
             0 -> pure Nothing
-            1 -> Just <$> getPreview hashPrism
-            _ -> fail "mkRollbackPointCodecs: invalid merkle root tag"
-        pure $ RollbackPoint{rbpHash, rbpInverseOperations, rpbMerkleRoot}
+            1 -> Just <$> decodePreview hashPrism
+            _ ->
+                fail
+                    "rollbackPointPrism: invalid\
+                    \ merkle root array length"
+        pure
+            RollbackPoint
+                { rbpHash
+                , rbpInverseOperations
+                , rpbMerkleRoot
+                }
 
+    decodeOp :: CBOR.Decoder s (Operation key value)
+    decodeOp = do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeWord
+        case (tag, len) of
+            (0, 2) -> Delete <$> decodePreview keyPrism
+            (1, 3) ->
+                Insert
+                    <$> decodePreview keyPrism
+                    <*> decodePreview valuePrism
+            _ ->
+                fail
+                    "rollbackPointPrism: invalid\
+                    \ operation"
+
+-- | Prism for 'WithOrigin' using CBOR encoding.
 withOriginPrism
     :: forall slot
      . Prism' ByteString slot
@@ -111,17 +167,37 @@ withOriginPrism
 withOriginPrism slotP = prism' encode decode
   where
     encode :: WithOrigin slot -> ByteString
-    encode Origin = B.singleton 0
+    encode Origin =
+        encodeCBOR $ CBOR.encodeWord 0
     encode (At slot) =
-        B.cons 1 $ evalPutM $ putReview slotP slot
+        encodeCBOR
+            $ CBOR.encodeListLen 2
+                <> CBOR.encodeWord 1
+                <> encodeReview slotP slot
 
     decode :: ByteString -> Maybe (WithOrigin slot)
-    decode = evalGetM getOrigin
-
-    getOrigin :: Get (WithOrigin slot)
-    getOrigin = do
-        tag <- getWord8
-        case tag of
-            0 -> pure Origin
-            1 -> At <$> getPreview slotP
-            _ -> fail "withOriginPrism: invalid WithOrigin tag"
+    decode = decodeCBOR $ do
+        tokenType <- CBOR.peekTokenType
+        case tokenType of
+            CBOR.TypeUInt -> do
+                tag <- CBOR.decodeWord
+                case tag of
+                    0 -> pure Origin
+                    _ ->
+                        fail
+                            "withOriginPrism:\
+                            \ invalid tag"
+            CBOR.TypeListLen -> do
+                _ <- CBOR.decodeListLen
+                tag <- CBOR.decodeWord
+                case tag of
+                    1 ->
+                        At <$> decodePreview slotP
+                    _ ->
+                        fail
+                            "withOriginPrism:\
+                            \ invalid tag"
+            _ ->
+                fail
+                    "withOriginPrism:\
+                    \ unexpected token"
