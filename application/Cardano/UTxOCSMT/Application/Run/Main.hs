@@ -77,7 +77,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
     )
 import Control.Exception (SomeException, catch, displayException)
 import Control.Monad (when, (<=<))
-import Control.Tracer (Contravariant (..), traceWith)
+import Control.Tracer (Contravariant (..), nullTracer, traceWith)
 import Data.Tracer.Intercept (intercept)
 import Data.Tracer.LogFile (logTracer)
 import Data.Tracer.ThreadSafe (newThreadSafeTracer)
@@ -130,6 +130,9 @@ main = withUtf8 $ do
             "Tracking cardano UTxOs in a CSMT in a rocksDB database"
             optionsParser
     logTracer logPath $ \basicTracer -> do
+        let appTracer
+                | metricsOn, Nothing <- logPath = nullTracer
+                | otherwise = basicTracer
         metricsVar <- newTVarIO Nothing
         metricsEvent <-
             metricsTracer
@@ -147,7 +150,7 @@ main = withUtf8 $ do
                 throttled <-
                     throttleByFrequency
                         [matchHighFrequencyEvents]
-                        (contramap renderThrottledMainTraces basicTracer)
+                        (contramap renderThrottledMainTraces appTracer)
                 newThreadSafeTracer $ timestampTracer throttled
         startHTTPService
             (trace . HTTPServiceError)
