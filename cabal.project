@@ -26,8 +26,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/paolino/haskell-mts
-  tag: ce79d594ceb26ca80c8e11068877b2a90472cdbe
-  --sha256: 0c9clpdd5whc4kbr8lv82jk94cy51r2qjllpfpc5qb710md54cqc
+  tag: 965db279deb3943797e6d89e118a9631510de25a
+  --sha256: 16iv4n9nhm42fr2k26nbncj6pip8c56v2k6dk221czz733f4rq50
 
 source-repository-package
   type: git
