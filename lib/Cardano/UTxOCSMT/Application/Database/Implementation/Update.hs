@@ -14,6 +14,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , countRollbackPoints
     , newState
     , newFinality
+    , RollbackResult (..)
     )
 where
 
