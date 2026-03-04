@@ -229,6 +229,7 @@ library library
     , memory
     , mempack
     , mtl
+    , mts
     , mts:csmt
     , mts:rollbacks
     , network
