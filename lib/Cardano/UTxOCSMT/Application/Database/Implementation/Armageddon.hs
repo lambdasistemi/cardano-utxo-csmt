@@ -11,9 +11,6 @@ where
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( pattern UTxORollbackPoint
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
     )
@@ -29,9 +26,9 @@ import Database.KV.Cursor
 import Database.KV.Transaction
     ( KeyOf
     , delete
-    , insert
     , iterating
     )
+import MTS.Rollbacks.Store qualified as Store
 import Ouroboros.Network.Point (WithOrigin (..))
 
 data ArmageddonTrace
@@ -52,7 +49,7 @@ data ArmageddonParams hash = ArmageddonParams
     , noHash :: hash
     }
 
--- Clean up a column batch of rows
+-- Clean up a non-rollback column in batches
 cleanUpBatch
     :: (Ord (KeyOf x), Monad m)
     => RunTransaction cf op slot hash key value m
@@ -86,11 +83,17 @@ cleanup
     -> RunTransaction cf op slot hash key value m
     -> ArmageddonParams hash
     -> m ()
-cleanup (traceWith -> trace) runTransaction armageddonParams = do
+cleanup (traceWith -> trace) runTransaction@RunTransaction{transact} armageddonParams = do
     trace ArmageddonStarted
     cleanUpBatch runTransaction KVCol armageddonParams
     cleanUpBatch runTransaction CSMTCol armageddonParams
-    cleanUpBatch runTransaction RollbackPoints armageddonParams
+    fix $ \batch -> do
+        more <-
+            transact
+                $ Store.armageddonCleanup
+                    RollbackPoints
+                    (armageddonBatchSize armageddonParams)
+        when more batch
     cleanUpBatch runTransaction ConfigCol armageddonParams
     trace ArmageddonCompleted
 
@@ -117,12 +120,8 @@ setup
     -> m ()
 setup (traceWith -> trace) (RunTransaction{transact}) armageddonParams = do
     transact
-        $ insert
+        $ Store.armageddonSetup
             RollbackPoints
             Origin
-            ( UTxORollbackPoint
-                (noHash armageddonParams)
-                []
-                Nothing
-            )
+            (Just (noHash armageddonParams, Nothing))
     trace SetupDone

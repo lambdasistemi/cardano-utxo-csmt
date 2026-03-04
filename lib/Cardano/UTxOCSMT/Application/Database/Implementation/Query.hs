@@ -57,6 +57,7 @@ import Database.KV.Transaction
     , iterating
     , query
     )
+import MTS.Rollbacks.Store qualified as Store
 import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Create a query interface
@@ -72,12 +73,11 @@ mkQuery
 mkQuery isoK =
     Query
         { getValue = query KVCol
-        , getTip =
-            iterating RollbackPoints $ do
-                ml <- lastEntry
-                case ml of
-                    Nothing -> lift . lift $ fail "No tip in rollback points"
-                    Just e -> pure $ entryKey e
+        , getTip = do
+            mt <- Store.queryTip RollbackPoints
+            case mt of
+                Nothing -> lift $ fail "No tip in rollback points"
+                Just t -> pure t
         , getFinality =
             iterating RollbackPoints $ do
                 mf <- firstEntry
