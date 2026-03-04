@@ -6,15 +6,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , renderUpdateTrace
 
       -- * Low level operations, exposed for testing
-    , forwardFinality
     , forwardTip
     , updateRollbackPoint
-    , rollbackTip
     , sampleRollbackPoints
-    , countRollbackPoints
     , newState
     , newFinality
-    , RollbackResult (..)
     )
 where
 
@@ -63,15 +59,13 @@ import Database.KV.Cursor
     , lastEntry
     , nextEntry
     , prevEntry
-    , seekKey
     )
 import Database.KV.Transaction
     ( Transaction
-    , delete
-    , insert
     , iterating
     , query
     )
+import MTS.Rollbacks.Store qualified as Store
 import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
@@ -79,12 +73,11 @@ import Ouroboros.Network.Point (WithOrigin (..))
 queryTip
     :: MonadFail m
     => Transaction m cf (Columns slot hash key value) op (WithOrigin slot)
-queryTip =
-    iterating RollbackPoints $ do
-        ml <- lastEntry
-        case ml of
-            Nothing -> lift . lift $ fail "No tip in rollback points"
-            Just e -> pure $ entryKey e
+queryTip = do
+    mt <- Store.queryTip RollbackPoints
+    case mt of
+        Nothing -> lift $ fail "No tip in rollback points"
+        Just t -> pure t
 
 data UpdateTrace slot hash
     = UpdateArmageddon ArmageddonTrace
@@ -133,9 +126,7 @@ newState
                         RollbackPoints
                         sampleRollbackPoints
                 rollbackCount <-
-                    iterating
-                        RollbackPoints
-                        countRollbackPoints
+                    Store.countPoints RollbackPoints
                 pure (cps, rollbackCount)
         trace $ UpdateNewState cps
         pure
@@ -234,9 +225,10 @@ updateRollbackPoint
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
 updateRollbackPoint rootHashQuery pointHash pointSlot inverseOps = do
     merkleRoot <- rootHashQuery
-    insert RollbackPoints (At pointSlot)
+    Store.storeRollbackPoint RollbackPoints (At pointSlot)
         $ UTxORollbackPoint pointHash inverseOps merkleRoot
     pure merkleRoot
+
 sampleRollbackPoints
     :: Monad m
     => Cursor
@@ -251,26 +243,12 @@ sampleRollbackPoints = do
             rest <- sampleAtFibonacciIntervals prevEntry
             pure $ keepAts . fmap entryKey $ h : rest
 
--- | Count total rollback points in the DB.
-countRollbackPoints
-    :: Monad m
-    => Cursor
-        (Transaction m cf (Columns slot hash key value) op)
-        (RollbackPointKV slot hash key value)
-        Int
-countRollbackPoints = do
-    me <- firstEntry
-    ($ me) $ fix $ \go current -> case current of
-        Nothing -> pure 0
-        Just _ -> do
-            next <- nextEntry
-            (+ 1) <$> go next
-
 keepAts :: [WithOrigin a] -> [a]
 keepAts = flip foldr [] $ \case
     Origin -> id
     At x -> (x :)
 
+-- | Apply inverse operations from a rollback point
 rollbackRollbackPoint
     :: Monad m
     => CSMTOps
@@ -284,89 +262,6 @@ rollbackRollbackPoint CSMTOps{csmtInsert, csmtDelete} (UTxORollbackPoint _ ops _
     forM_ ops $ \case
         Insert k v -> csmtInsert k v
         Delete k -> csmtDelete k
-
--- | Result of a rollback attempt. Just a mirror, without continuation of 'Interface.State'
-data RollbackResult
-    = RollbackSucceeded
-    | RollbackImpossible
-
-{- | Create a transaction that performs a rollback to the given slot
-Returns whether the rollback was successful, failed but possible (with a list
-of rollback points to intersect against), or impossible (in which case the
-database should be truncated)
-It DOES NOT encode the truncation as a transaction because that would potentially
-be too big to fit in memory
-Rollback is performed by seeking the exact rollback point, and then applying all
-inverse operations down to that point excluded
-If the exact rollback point is not found, we return a list of available rollback points
-If the list is empty, rollback is impossible and the database should be truncated
--}
-rollbackTip
-    :: (Ord slot, MonadFail m)
-    => CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
-        key
-        value
-        hash
-    -> slot
-    -- ^ Slot to rollback to
-    -> Transaction
-        m
-        cf
-        (Columns slot hash key value)
-        op
-        (RollbackResult, Int)
-rollbackTip ops slot = do
-    tip <- queryTip
-    if At slot > tip
-        then pure (RollbackSucceeded, 0)
-        else iterating RollbackPoints $ do
-            me <- seekKey $ At slot
-            case me of
-                Just (Entry (At foundSlot) UTxORollbackPoint{})
-                    | foundSlot == slot -> do
-                        ml <- lastEntry
-                        deleted <-
-                            ($ ml) $ fix $ \go current ->
-                                case current of
-                                    Nothing ->
-                                        lift . lift
-                                            $ fail
-                                                "rollbackTipApply: inconsistent rollback points"
-                                    Just Entry{entryKey, entryValue}
-                                        | entryKey > At slot -> do
-                                            lift $ do
-                                                rollbackRollbackPoint
-                                                    ops
-                                                    entryValue
-                                                delete
-                                                    RollbackPoints
-                                                    entryKey
-                                            prev <- prevEntry
-                                            (+ 1) <$> go prev
-                                        | otherwise -> pure 0
-                        pure (RollbackSucceeded, deleted)
-                    | otherwise ->
-                        pure (RollbackImpossible, 0)
-                _ -> pure (RollbackImpossible, 0)
-
--- | Apply forward finality .
-forwardFinality
-    :: (Ord slot, Monad m)
-    => slot
-    -> Transaction m cf (Columns slot hash key value) op Int
-forwardFinality slot = do
-    iterating RollbackPoints $ do
-        me <- firstEntry
-        ($ me) $ fix $ \go current ->
-            case current of
-                Nothing -> pure 0
-                Just Entry{entryKey}
-                    | entryKey < At slot -> do
-                        lift $ delete RollbackPoints entryKey
-                        next <- nextEntry
-                        (+ 1) <$> go next
-                    | otherwise -> pure 0
 
 {- | Create a database update state object that threads a
 rollback point counter through each continuation.
@@ -419,16 +314,25 @@ mkUpdate
                                 else count
                 , rollbackTipApply = \case
                     At s -> do
-                        (r, deleted) <-
-                            transact
-                                $ rollbackTip ops s
+                        r <-
+                            transact $ do
+                                tip <- queryTip
+                                if At s > tip
+                                    then
+                                        pure
+                                            $ Store.RollbackSucceeded 0
+                                    else
+                                        Store.rollbackTo
+                                            RollbackPoints
+                                            (rollbackRollbackPoint ops)
+                                            (At s)
                         case r of
-                            RollbackSucceeded ->
+                            Store.RollbackSucceeded deleted ->
                                 pure
                                     $ Syncing
                                     $ go
                                         (count - deleted)
-                            RollbackImpossible -> do
+                            Store.RollbackImpossible -> do
                                 armageddonCall
                                 pure
                                     $ Truncating
@@ -439,7 +343,9 @@ mkUpdate
                 , forwardFinalityApply = \s -> do
                     pruned <-
                         transact
-                            $ forwardFinality s
+                            $ Store.pruneBelow
+                                RollbackPoints
+                                (At s)
                     pure
                         $ go (count - pruned)
                 }
