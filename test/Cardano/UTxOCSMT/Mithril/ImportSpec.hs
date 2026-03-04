@@ -139,7 +139,6 @@ withRocksDB path action =
         dbConfig
         [ ("kv", dbConfig)
         , ("csmt", dbConfig)
-        , ("journal", dbConfig)
         , ("rollbacks", dbConfig)
         ]
         $ \db -> do

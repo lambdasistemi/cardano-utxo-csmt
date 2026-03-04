@@ -81,6 +81,7 @@ import Data.Char (isAlpha, isAscii)
 import Data.List.NonEmpty (NonEmpty (..))
 import Database.RocksDB (Config (..), withDBCF)
 import Ouroboros.Network.Point (WithOrigin (..))
+import System.Directory (removePathForcibly)
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.QuickCheck
@@ -372,6 +373,7 @@ spec = do
                     slot3 `shouldBe` Nothing
         it "survives database close and reopen (crash recovery)" $ do
             let testDir = "/tmp/smoke-test-db"
+            removePathForcibly testDir
             -- First session: set skip slot then "crash" (close DB)
             withRocksDB testDir $ \(RunRocksDB r) -> do
                 db <- r ask
@@ -397,7 +399,6 @@ withRocksDB path action = do
         config
         [ ("kv", config)
         , ("csmt", config)
-        , ("journal", config)
         , ("rollbacks", config)
         , ("config", config)
         ]

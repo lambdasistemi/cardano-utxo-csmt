@@ -356,6 +356,7 @@ test-suite unit-tests
     , containers
     , contra-tracer
     , contra-tracer-contrib
+    , directory
     , hspec
     , http-client
     , http-client-tls
