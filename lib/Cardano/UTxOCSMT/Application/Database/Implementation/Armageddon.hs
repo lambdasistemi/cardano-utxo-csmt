@@ -12,7 +12,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPoint (..)
+    ( pattern UTxORollbackPoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
@@ -120,10 +120,9 @@ setup (traceWith -> trace) (RunTransaction{transact}) armageddonParams = do
         $ insert
             RollbackPoints
             Origin
-            ( RollbackPoint
-                { rbpHash = noHash armageddonParams
-                , rbpInverseOperations = []
-                , rpbMerkleRoot = Nothing
-                }
+            ( UTxORollbackPoint
+                (noHash armageddonParams)
+                []
+                Nothing
             )
     trace SetupDone

@@ -12,7 +12,6 @@ import CSMT.Hashes
     , isoHash
     , mkHash
     )
-import Cardano.Slotting.Slot (WithOrigin (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.AppConfig
     ( AppConfig (..)
     , decodeAppConfig
@@ -81,6 +80,7 @@ import Data.ByteString.Lazy qualified as BL
 import Data.Char (isAlpha, isAscii)
 import Data.List.NonEmpty (NonEmpty (..))
 import Database.RocksDB (Config (..), withDBCF)
+import Ouroboros.Network.Point (WithOrigin (..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.QuickCheck

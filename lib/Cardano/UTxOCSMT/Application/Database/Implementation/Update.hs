@@ -28,8 +28,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPoint (..)
+    ( Meta
     , RollbackPointKV
+    , pattern UTxORollbackPoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
@@ -71,6 +72,7 @@ import Database.KV.Transaction
     , iterating
     , query
     )
+import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Query the current tip directly from rollback points.
@@ -230,15 +232,11 @@ updateRollbackPoint
     -> slot
     -> [Operation key value]
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
-updateRollbackPoint rootHashQuery pointHash pointSlot rbpInverseOperations = do
-    rpbMerkleRoot <- rootHashQuery
+updateRollbackPoint rootHashQuery pointHash pointSlot inverseOps = do
+    merkleRoot <- rootHashQuery
     insert RollbackPoints (At pointSlot)
-        $ RollbackPoint
-            { rbpHash = pointHash
-            , rbpInverseOperations
-            , rpbMerkleRoot
-            }
-    pure rpbMerkleRoot
+        $ UTxORollbackPoint pointHash inverseOps merkleRoot
+    pure merkleRoot
 sampleRollbackPoints
     :: Monad m
     => Cursor
@@ -280,10 +278,10 @@ rollbackRollbackPoint
         key
         value
         hash
-    -> RollbackPoint slot hash key value
+    -> RP.RollbackPoint (Operation key value) (Meta hash)
     -> Transaction m cf (Columns slot hash key value) op ()
-rollbackRollbackPoint CSMTOps{csmtInsert, csmtDelete} RollbackPoint{rbpInverseOperations} =
-    forM_ rbpInverseOperations $ \case
+rollbackRollbackPoint CSMTOps{csmtInsert, csmtDelete} (UTxORollbackPoint _ ops _) =
+    forM_ ops $ \case
         Insert k v -> csmtInsert k v
         Delete k -> csmtDelete k
 
@@ -325,7 +323,7 @@ rollbackTip ops slot = do
         else iterating RollbackPoints $ do
             me <- seekKey $ At slot
             case me of
-                Just (Entry (At foundSlot) RollbackPoint{})
+                Just (Entry (At foundSlot) UTxORollbackPoint{})
                     | foundSlot == slot -> do
                         ml <- lastEntry
                         deleted <-

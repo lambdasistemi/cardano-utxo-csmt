@@ -230,6 +230,7 @@ library library
     , mempack
     , mtl
     , mts:csmt
+    , mts:rollbacks
     , network
     , network-mux
     , opt-env-conf
@@ -364,6 +365,7 @@ test-suite unit-tests
     , mempack
     , mts
     , mts:csmt
+    , mts:rollbacks
     , opt-env-conf
     , ouroboros-network-api
     , path
