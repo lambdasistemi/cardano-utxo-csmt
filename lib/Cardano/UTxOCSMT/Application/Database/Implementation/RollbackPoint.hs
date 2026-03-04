@@ -1,6 +1,23 @@
+{- | Rollback point types and serialization.
+
+Re-exports 'RollbackPoint' from @mts:rollbacks@
+and provides a pattern synonym for
+backward-compatible field access.
+-}
 module Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPoint (..)
+    ( -- * Re-exports from mts:rollbacks
+      RP.RollbackPoint (..)
+
+      -- * Pattern synonym
+    , pattern UTxORollbackPoint
+
+      -- * Metadata alias
+    , Meta
+
+      -- * KV alias
     , RollbackPointKV
+
+      -- * Serialization
     , rollbackPointPrism
     , withOriginPrism
     )
@@ -22,21 +39,47 @@ import Control.Lens
 import Control.Monad (replicateM)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
-import Database.KV.Transaction (KV)
+import MTS.Rollbacks.Column (RollbackKV)
+import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
--- | Represents a rollback point in the database
-data RollbackPoint slot hash key value = RollbackPoint
+-- | KV pair for rollback point storage.
+type RollbackPointKV slot hash key value =
+    RollbackKV
+        (WithOrigin slot)
+        (Operation key value)
+        (hash, Maybe hash)
+
+{- | Metadata type for downstream rollback points.
+
+First component is the block hash (always present),
+second is the optional merkle root.
+-}
+type Meta hash = (hash, Maybe hash)
+
+{- | Pattern synonym mapping the generic 'RollbackPoint'
+to downstream field names.
+
+@
+UTxORollbackPoint
     { rbpHash :: hash
     , rbpInverseOperations :: [Operation key value]
     , rpbMerkleRoot :: Maybe hash
     }
+@
+-}
+pattern UTxORollbackPoint
+    :: hash
+    -> [Operation key value]
+    -> Maybe hash
+    -> RP.RollbackPoint (Operation key value) (Meta hash)
+pattern UTxORollbackPoint h ops mr =
+    RP.RollbackPoint
+        { rpInverses = ops
+        , rpMeta = Just (h, mr)
+        }
 
--- | Type alias for the KV column storing rollback points
-type RollbackPointKV slot hash key value =
-    KV
-        (WithOrigin slot)
-        (RollbackPoint slot hash key value)
+{-# COMPLETE UTxORollbackPoint #-}
 
 -- | Encode a CBOR value to strict 'ByteString'.
 encodeCBOR :: CBOR.Encoding -> ByteString
@@ -71,30 +114,30 @@ decodePreview p = do
 
 -- | Prism for serializing/deserializing RollbackPoint
 rollbackPointPrism
-    :: forall slot hash key value
+    :: forall hash key value
      . Prism' ByteString hash
     -> Prism' ByteString key
     -> Prism' ByteString value
     -> Prism'
         ByteString
-        (RollbackPoint slot hash key value)
+        ( RP.RollbackPoint
+            (Operation key value)
+            (Meta hash)
+        )
 rollbackPointPrism hashPrism keyPrism valuePrism =
     prism' encode decode
   where
     encode
-        :: RollbackPoint slot hash key value
+        :: RP.RollbackPoint
+            (Operation key value)
+            (Meta hash)
         -> ByteString
-    encode
-        RollbackPoint
-            { rbpHash
-            , rbpInverseOperations
-            , rpbMerkleRoot
-            } =
-            encodeCBOR
-                $ CBOR.encodeListLen 3
-                    <> encodeReview hashPrism rbpHash
-                    <> encodeOps rbpInverseOperations
-                    <> encodeMaybe rpbMerkleRoot
+    encode (UTxORollbackPoint h ops mr) =
+        encodeCBOR
+            $ CBOR.encodeListLen 3
+                <> encodeReview hashPrism h
+                <> encodeOps ops
+                <> encodeMaybe mr
 
     encodeOps :: [Operation key value] -> CBOR.Encoding
     encodeOps ops =
@@ -122,27 +165,25 @@ rollbackPointPrism hashPrism keyPrism valuePrism =
     decode
         :: ByteString
         -> Maybe
-            (RollbackPoint slot hash key value)
+            ( RP.RollbackPoint
+                (Operation key value)
+                (Meta hash)
+            )
     decode = decodeCBOR $ do
         _ <- CBOR.decodeListLen
-        rbpHash <- decodePreview hashPrism
+        h <- decodePreview hashPrism
         opsLen <- CBOR.decodeListLen
-        rbpInverseOperations <-
+        ops <-
             replicateM opsLen decodeOp
         mbLen <- CBOR.decodeListLen
-        rpbMerkleRoot <- case mbLen of
+        mr <- case mbLen of
             0 -> pure Nothing
             1 -> Just <$> decodePreview hashPrism
             _ ->
                 fail
                     "rollbackPointPrism: invalid\
                     \ merkle root array length"
-        pure
-            RollbackPoint
-                { rbpHash
-                , rbpInverseOperations
-                , rpbMerkleRoot
-                }
+        pure $ UTxORollbackPoint h ops mr
 
     decodeOp :: CBOR.Decoder s (Operation key value)
     decodeOp = do

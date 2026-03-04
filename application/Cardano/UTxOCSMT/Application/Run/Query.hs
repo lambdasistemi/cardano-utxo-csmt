@@ -88,11 +88,12 @@ queryMerkleRoots
 queryMerkleRoots (RunTransaction runTx) =
     runTx $ concatMap toMerkleRootEntry <$> getAllMerkleRoots
   where
-    toMerkleRootEntry (slot, blockHash, merkleRoot) = case slot of
-        Origin -> []
-        At (Network.Point Origin) -> []
-        At (Network.Point (At (Block slotNo _))) ->
-            [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
+    toMerkleRootEntry (slot, blockHash, merkleRoot) =
+        case slot of
+            Origin -> []
+            At (Network.Point Origin) -> []
+            At (Network.Point (At (Block slotNo _))) ->
+                [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
 
 {- | Retrieve the inclusion proof and UTxO value for a transaction input.
 

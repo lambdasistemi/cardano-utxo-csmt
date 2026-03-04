@@ -30,7 +30,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     , ConfigKey (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPoint (..)
+    ( pattern UTxORollbackPoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
@@ -124,9 +124,9 @@ getAllMerkleRoots =
         ($ ml) $ fix $ \go current -> case current of
             Nothing -> pure []
             Just
-                Entry{entryKey, entryValue = RollbackPoint{rbpHash, rpbMerkleRoot}} -> do
+                Entry{entryKey, entryValue = UTxORollbackPoint h _ mr} -> do
                     rest <- prevEntry >>= go
-                    pure $ (entryKey, rbpHash, rpbMerkleRoot) : rest
+                    pure $ (entryKey, h, mr) : rest
 
 -- | Get the application configuration
 getAppConfig

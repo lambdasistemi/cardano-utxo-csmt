@@ -14,7 +14,6 @@ import CSMT.Hashes
     , mkHash
     , renderHash
     )
-import Cardano.Slotting.Slot (WithOrigin (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams (..)
     , setup
@@ -95,6 +94,7 @@ import Network.Wai.Test
     , setPath
     )
 import Ouroboros.Network.Block (SlotNo (..))
+import Ouroboros.Network.Point (WithOrigin (..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Test.QuickCheck
