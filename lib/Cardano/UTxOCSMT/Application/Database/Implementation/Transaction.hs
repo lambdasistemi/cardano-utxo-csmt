@@ -57,9 +57,9 @@ mkCSMTOps
         hash
 mkCSMTOps fkv h =
     CSMTOps
-        { csmtInsert = inserting [] fkv h KVCol CSMTCol
-        , csmtDelete = deleting [] fkv h KVCol CSMTCol
-        , csmtRootHash = root h CSMTCol []
+        { csmtInsert = inserting fkv h KVCol CSMTCol
+        , csmtDelete = deleting fkv h KVCol CSMTCol
+        , csmtRootHash = root h CSMTCol
         }
 
 queryMerkleRoot
@@ -67,7 +67,7 @@ queryMerkleRoot
     => Hashing hash
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
 queryMerkleRoot h =
-    root h CSMTCol []
+    root h CSMTCol
 
 {- | Query all UTxOs under a given address prefix.
 Uses 'collectValues' to navigate the address-prefixed CSMT,
@@ -81,7 +81,7 @@ queryByAddress
     -- ^ Address prefix as CSMT Key
     -> Transaction m cf (Columns slot hash key value) op [(key, value)]
 queryByAddress FromKV{isoK} addressKey = do
-    indirects <- collectValues CSMTCol [] addressKey
+    indirects <- collectValues CSMTCol addressKey
     catMaybes <$> traverse (lookupKV isoK) indirects
   where
     lookupKV isoK' Indirect{jump} = do
