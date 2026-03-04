@@ -140,6 +140,8 @@ withRocksDB path action =
         [ ("kv", dbConfig)
         , ("csmt", dbConfig)
         , ("rollbacks", dbConfig)
+        , ("config", dbConfig)
+        , ("journal", dbConfig)
         ]
         $ \db -> do
             action $ RunRocksDB $ flip runReaderT db

@@ -86,6 +86,7 @@ queryDB dbPath txIdBytes mIndex = do
         , ("csmt", config)
         , ("rollbacks", config)
         , ("config", config)
+        , ("journal", config)
         ]
         $ \db -> do
             kvCF <- case columnFamilies db of

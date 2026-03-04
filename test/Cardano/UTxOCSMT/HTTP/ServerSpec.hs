@@ -358,6 +358,7 @@ withRocksDB path =
         , ("csmt", testConfig)
         , ("rollbacks", testConfig)
         , ("config", testConfig)
+        , ("journal", testConfig)
         ]
 
 -- | Sample metrics for testing

@@ -67,6 +67,7 @@ runInsertBench utxos =
             , ("csmt", rocksConfig)
             , ("rollbacks", rocksConfig)
             , ("config", rocksConfig)
+            , ("journal", rocksConfig)
             ]
             $ \db -> do
                 let CSMTContext{fromKV = fkv, hashing = h} = benchContext

@@ -401,6 +401,7 @@ withRocksDB path action = do
         , ("csmt", config)
         , ("rollbacks", config)
         , ("config", config)
+        , ("journal", config)
         ]
         $ \db -> do
             action $ RunRocksDB $ flip runReaderT db

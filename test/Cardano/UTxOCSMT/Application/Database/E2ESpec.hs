@@ -127,6 +127,7 @@ withFreshDB action =
             , ("csmt", testConfig)
             , ("rollbacks", testConfig)
             , ("config", testConfig)
+            , ("journal", testConfig)
             ]
             $ \db -> do
                 ((update, _rollbackPoints), _runner) <-
