@@ -356,6 +356,7 @@ withRocksDB path =
         testConfig
         [ ("kv", testConfig)
         , ("csmt", testConfig)
+        , ("journal", testConfig)
         , ("rollbacks", testConfig)
         , ("config", testConfig)
         ]

@@ -397,6 +397,7 @@ withRocksDB path action = do
         config
         [ ("kv", config)
         , ("csmt", config)
+        , ("journal", config)
         , ("rollbacks", config)
         , ("config", config)
         ]
