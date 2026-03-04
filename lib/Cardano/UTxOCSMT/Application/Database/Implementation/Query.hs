@@ -86,7 +86,7 @@ mkQuery isoK =
                     Just e -> pure $ entryKey e
         , getByAddress = \addressBytes -> do
             let addressKey = byteStringToKey addressBytes
-            indirects <- collectValues CSMTCol [] addressKey
+            indirects <- collectValues CSMTCol addressKey
             catMaybes <$> traverse lookupKV indirects
         }
   where
