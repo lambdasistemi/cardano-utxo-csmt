@@ -39,5 +39,6 @@ nav:
   - Getting Started: getting-started.md
   - Mithril Bootstrap: mithril-bootstrap.md
   - Architecture: architecture.md
+  - Database Schema: database-schema.md
   - API Reference:
       - Swagger UI: swagger-ui.md
