@@ -3,9 +3,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     , Prisms (..)
     , codecs
     , ConfigKey (..)
+    , injectStandalone
     )
 where
 
+import CSMT.Backend.Standalone (Standalone (..))
 import CSMT.Interface (Indirect, Key)
 import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     ( csmtCBORCodecs
@@ -55,12 +57,16 @@ data Columns slot hash key value x where
     ConfigCol
         :: Columns slot hash key value (KV ConfigKey ByteString)
         -- ^ Column for storing serialized application configuration
+    JournalCol
+        :: Columns slot hash key value (KV ByteString ByteString)
+        -- ^ Journal column for KVOnly-mode replay entries
 
 instance GEq (Columns slot hash key value) where
     geq KVCol KVCol = Just Refl
     geq CSMTCol CSMTCol = Just Refl
     geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
+    geq JournalCol JournalCol = Just Refl
     geq _ _ = Nothing
 
 instance GCompare (Columns slot hash key value) where
@@ -69,11 +75,14 @@ instance GCompare (Columns slot hash key value) where
     gcompare _ KVCol = GGT
     gcompare CSMTCol CSMTCol = GEQ
     gcompare CSMTCol _ = GLT
-    gcompare RollbackPoints CSMTCol = GGT
+    gcompare _ CSMTCol = GGT
     gcompare RollbackPoints RollbackPoints = GEQ
-    gcompare RollbackPoints ConfigCol = GLT
+    gcompare RollbackPoints _ = GLT
+    gcompare _ RollbackPoints = GGT
     gcompare ConfigCol ConfigCol = GEQ
-    gcompare ConfigCol _ = GGT
+    gcompare ConfigCol _ = GLT
+    gcompare _ ConfigCol = GGT
+    gcompare JournalCol JournalCol = GEQ
 
 -- | Prisms for serializing/deserializing keys and values
 data Prisms slot hash key value = Prisms
@@ -101,4 +110,17 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
                 { keyCodec = configKeyPrism
                 , valueCodec = prism' id Just
                 }
+        , JournalCol
+            :=> Codecs
+                { keyCodec = prism' id Just
+                , valueCodec = prism' id Just
+                }
         ]
+
+-- | Inject 'Standalone' columns into the corresponding 'Columns'.
+injectStandalone
+    :: Standalone ByteString ByteString hash c
+    -> Columns slot hash ByteString ByteString c
+injectStandalone StandaloneKVCol = KVCol
+injectStandalone StandaloneCSMTCol = CSMTCol
+injectStandalone StandaloneJournalCol = JournalCol

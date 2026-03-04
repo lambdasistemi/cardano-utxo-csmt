@@ -3,6 +3,9 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , CSMTContext (..)
     , CSMTOps (..)
     , mkCSMTOps
+    , mkKVOnlyOps
+    , replayJournal
+    , journalEmpty
     , queryMerkleRoot
     , queryByAddress
     )
@@ -10,16 +13,33 @@ where
 
 import CSMT (FromKV (..), Hashing, inserting)
 import CSMT.Deletion (deleting)
+import CSMT.Hashes (Hash)
 import CSMT.Interface (Indirect (..), Key, root)
+import CSMT.MTS
+    ( CsmtImpl
+    , csmtKVOnlyStoreT
+    , replayJournalChunkT
+    )
 import CSMT.Proof.Completeness (collectValues)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
+    , injectStandalone
     )
 import Control.Lens (review)
+import Control.Monad (unless)
+import Data.ByteString (ByteString)
 import Data.Maybe (catMaybes)
+import Database.KV.Cursor (firstEntry)
 import Database.KV.Transaction
     ( Transaction
+    , iterating
+    , mapColumns
     , query
+    )
+import MTS.Interface
+    ( MerkleTreeStore
+    , Mode (..)
+    , hoistMTS
     )
 
 newtype RunTransaction cf op slot hash key value m = RunTransaction
@@ -88,3 +108,73 @@ queryByAddress FromKV{isoK} addressKey = do
         let k = review isoK' jump
         mv <- query KVCol k
         pure $ fmap (k,) mv
+
+-- ------------------------------------------------------------------
+-- KVOnly mode
+-- ------------------------------------------------------------------
+
+{- | Build a KVOnly 'MerkleTreeStore' over 'Columns'.
+
+Delegates to 'csmtKVOnlyStoreT' from haskell-mts and lifts
+'Standalone' columns into 'Columns' via 'mapColumns'.
+-}
+mkKVOnlyOps
+    :: (Monad m)
+    => FromKV ByteString ByteString Hash
+    -> MerkleTreeStore
+        'KVOnly
+        CsmtImpl
+        ( Transaction
+            m
+            cf
+            (Columns slot Hash ByteString ByteString)
+            op
+        )
+mkKVOnlyOps fkv =
+    hoistMTS
+        (mapColumns injectStandalone)
+        (csmtKVOnlyStoreT fkv)
+
+-- ------------------------------------------------------------------
+-- Journal replay
+-- ------------------------------------------------------------------
+
+-- | Check if the journal column is empty.
+journalEmpty
+    :: (Monad m)
+    => Transaction
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        Bool
+journalEmpty = iterating JournalCol $ do
+    me <- firstEntry
+    pure $ case me of
+        Nothing -> True
+        Just _ -> False
+
+{- | Replay journal entries against the CSMT, then clear them.
+
+Delegates to 'replayJournalChunkT' from haskell-mts, lifting
+'Standalone' columns into 'Columns' via 'mapColumns'.
+-}
+replayJournal
+    :: (Monad m)
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Int
+    -- ^ Chunk size
+    -> FromKV ByteString ByteString Hash
+    -> Hashing Hash
+    -> RunTransaction cf op slot Hash ByteString ByteString m
+    -> m ()
+replayJournal prefix chunkSize fkv h RunTransaction{transact} =
+    loop
+  where
+    loop = do
+        done <-
+            transact
+                $ mapColumns injectStandalone
+                $ replayJournalChunkT prefix chunkSize fkv h
+        unless done loop
