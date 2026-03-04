@@ -65,7 +65,6 @@ runInsertBench utxos =
             rocksConfig
             [ ("kv", rocksConfig)
             , ("csmt", rocksConfig)
-            , ("journal", rocksConfig)
             , ("rollbacks", rocksConfig)
             , ("config", rocksConfig)
             ]
