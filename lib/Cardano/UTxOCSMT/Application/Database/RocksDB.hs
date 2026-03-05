@@ -15,6 +15,7 @@ module Cardano.UTxOCSMT.Application.Database.RocksDB
     , newRunRocksDBTransaction
     , newRocksDBState
     , createUpdateState
+    , createSplitUpdateState
     )
 where
 
@@ -33,6 +34,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( UpdateTrace
+    , newSplitState
     , newState
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
@@ -144,6 +146,56 @@ createUpdateState
 createUpdateState tracer ops slotHash onForward armageddonParams runner = do
     ensureInitialized runner armageddonParams
     newState tracer ops slotHash onForward armageddonParams runner
+
+{- | Create split-mode Update state from an existing runner.
+
+Starts in KVOnly mode if journal is non-empty, otherwise Full.
+-}
+createSplitUpdateState
+    :: (MonadFail m, Ord key, Ord slot, Show slot)
+    => Tracer m (UpdateTrace slot hash)
+    -> CSMTOps
+        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
+        key
+        value
+        hash
+    -- ^ KVOnly ops
+    -> CSMTOps
+        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
+        key
+        value
+        hash
+    -- ^ Full ops
+    -> m ()
+    -- ^ Replay callback
+    -> (slot -> TipOf slot -> Bool)
+    -- ^ Tip detection predicate
+    -> (slot -> hash)
+    -> (slot -> TipOf slot -> m ())
+    -> ArmageddonParams hash
+    -> RunTransaction ColumnFamily BatchOp slot hash key value m
+    -> m (Update m slot key value, [slot])
+createSplitUpdateState
+    tracer
+    kvOps
+    fullOps
+    replay
+    isAtTip
+    slotHash
+    onForward
+    armageddonParams
+    runner = do
+        ensureInitialized runner armageddonParams
+        newSplitState
+            tracer
+            kvOps
+            fullOps
+            replay
+            isAtTip
+            slotHash
+            onForward
+            armageddonParams
+            runner
 
 {- | Ensure the database has been initialized with an Origin rollback point.
 This makes the public API self-initializing so callers can't forget to

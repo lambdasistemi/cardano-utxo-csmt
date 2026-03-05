@@ -1,5 +1,7 @@
 module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( mkUpdate
+    , mkSplitUpdate
+    , newSplitState
 
       -- * Tracing
     , UpdateTrace (..)
@@ -31,6 +33,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
     , RunTransaction (..)
+    , journalEmpty
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -83,6 +86,7 @@ data UpdateTrace slot hash
     = UpdateArmageddon ArmageddonTrace
     | UpdateForwardTip slot Int Int (Maybe hash)
     | UpdateNewState [slot]
+    | UpdateJournalReplay
     deriving (Show)
 
 renderUpdateTrace :: Show slot => UpdateTrace slot hash -> String
@@ -97,6 +101,8 @@ renderUpdateTrace (UpdateForwardTip slot nInsert nDelete _merkleRoot) =
         ++ " deletes"
 renderUpdateTrace (UpdateNewState slots) =
     "New update state with rollback points at: " ++ show slots
+renderUpdateTrace UpdateJournalReplay =
+    "Replaying journal to build CSMT tree"
 
 newState
     :: (Ord key, Ord slot, Show slot, MonadFail m)
@@ -139,6 +145,83 @@ newState
                 armageddonParams
                 runTransaction
                 rollbackCount
+
+{- | Initialize split-mode state.
+
+If the journal is non-empty, start in KVOnly mode (will replay
+on first tip touch). If empty, start in Full mode directly.
+-}
+newSplitState
+    :: (Ord key, Ord slot, Show slot, MonadFail m)
+    => Tracer m (UpdateTrace slot hash)
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+    -- ^ KVOnly ops (phase 1)
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+    -- ^ Full ops (phase 2)
+    -> m ()
+    -- ^ Replay callback
+    -> (slot -> TipOf slot -> Bool)
+    -- ^ Tip detection predicate
+    -> (slot -> hash)
+    -> (slot -> TipOf slot -> m ())
+    -> ArmageddonParams hash
+    -> RunTransaction cf op slot hash key value m
+    -> m (Update m slot key value, [slot])
+newSplitState
+    tw@TraceWith{tracer, trace}
+    kvOps
+    fullOps
+    replay
+    isAtTip
+    slotHash
+    onForward
+    armageddonParams
+    runTransaction@RunTransaction{transact} = do
+        (cps, rollbackCount, empty) <-
+            transact $ do
+                cps <-
+                    iterating
+                        RollbackPoints
+                        sampleRollbackPoints
+                rollbackCount <-
+                    Store.countPoints RollbackPoints
+                empty <- journalEmpty
+                pure (cps, rollbackCount, empty)
+        trace $ UpdateNewState cps
+        if empty
+            then
+                pure
+                    $ (,cps)
+                    $ mkUpdate
+                        tracer
+                        fullOps
+                        slotHash
+                        onForward
+                        armageddonParams
+                        runTransaction
+                        rollbackCount
+            else
+                pure
+                    $ (,cps)
+                    $ mkSplitUpdate
+                        tw
+                        kvOps
+                        fullOps
+                        replay
+                        isAtTip
+                        slotHash
+                        onForward
+                        armageddonParams
+                        runTransaction
+                        rollbackCount
 
 {- | Apply forward tip .
 We compose csmt transactions for each operation with an updateRollbackPoint one
@@ -349,6 +432,130 @@ mkUpdate
                     pure
                         $ go (count - pruned)
                 }
+        armageddonCall =
+            armageddon
+                (contra UpdateArmageddon)
+                runTransaction
+                armageddonParams
+
+{- | Two-phase update: starts in KVOnly mode, switches to Full
+after replaying the journal on first tip-touch.
+
+The follower is blocked during replay (forwardTipApply runs
+synchronously), making the transition atomic w.r.t. chain sync.
+-}
+mkSplitUpdate
+    :: (Ord key, Ord slot, Show slot, MonadFail m)
+    => Tracer m (UpdateTrace slot hash)
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+    -- ^ KVOnly ops (phase 1)
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+    -- ^ Full ops (phase 2)
+    -> m ()
+    -- ^ Replay callback
+    -> (slot -> TipOf slot -> Bool)
+    -- ^ Tip detection predicate
+    -> (slot -> hash)
+    -> (slot -> TipOf slot -> m ())
+    -- ^ Called after each forward
+    -> ArmageddonParams hash
+    -> RunTransaction cf op slot hash key value m
+    -> Int
+    -- ^ Initial rollback point count
+    -> Update m slot key value
+mkSplitUpdate
+    TraceWith{tracer, contra, trace}
+    kvOps
+    fullOps
+    replay
+    isAtTip
+    slotHash
+    onForward
+    armageddonParams
+    runTransaction@RunTransaction{transact} =
+        goKVOnly
+      where
+        goKVOnly count =
+            Update
+                { forwardTipApply =
+                    \slot chainTip operations -> do
+                        stored <-
+                            transact
+                                $ forwardTip
+                                    tracer
+                                    kvOps
+                                    (slotHash slot)
+                                    count
+                                    slot
+                                    operations
+                        onForward slot chainTip
+                        let count' =
+                                if stored
+                                    then count + 1
+                                    else count
+                        if isAtTip slot chainTip
+                            then do
+                                trace UpdateJournalReplay
+                                replay
+                                pure $ goFull count'
+                            else
+                                pure $ goKVOnly count'
+                , rollbackTipApply = \case
+                    At s -> do
+                        r <-
+                            transact $ do
+                                tip <- queryTip
+                                if At s > tip
+                                    then
+                                        pure
+                                            $ Store.RollbackSucceeded
+                                                0
+                                    else
+                                        Store.rollbackTo
+                                            RollbackPoints
+                                            ( rollbackRollbackPoint
+                                                kvOps
+                                            )
+                                            (At s)
+                        case r of
+                            Store.RollbackSucceeded deleted ->
+                                pure
+                                    $ Syncing
+                                    $ goKVOnly
+                                        (count - deleted)
+                            Store.RollbackImpossible -> do
+                                armageddonCall
+                                pure
+                                    $ Truncating
+                                    $ goKVOnly 0
+                    Origin -> do
+                        armageddonCall
+                        pure $ Syncing $ goKVOnly 0
+                , forwardFinalityApply = \s -> do
+                    pruned <-
+                        transact
+                            $ Store.pruneBelow
+                                RollbackPoints
+                                (At s)
+                    pure
+                        $ goKVOnly (count - pruned)
+                }
+        goFull =
+            mkUpdate
+                tracer
+                fullOps
+                slotHash
+                onForward
+                armageddonParams
+                runTransaction
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)

@@ -55,12 +55,16 @@ data Columns slot hash key value x where
     ConfigCol
         :: Columns slot hash key value (KV ConfigKey ByteString)
         -- ^ Column for storing serialized application configuration
+    JournalCol
+        :: Columns slot hash key value (KV key ByteString)
+        -- ^ Journal column for KVOnly mode replay
 
 instance GEq (Columns slot hash key value) where
     geq KVCol KVCol = Just Refl
     geq CSMTCol CSMTCol = Just Refl
     geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
+    geq JournalCol JournalCol = Just Refl
     geq _ _ = Nothing
 
 instance GCompare (Columns slot hash key value) where
@@ -71,9 +75,13 @@ instance GCompare (Columns slot hash key value) where
     gcompare CSMTCol _ = GLT
     gcompare RollbackPoints CSMTCol = GGT
     gcompare RollbackPoints RollbackPoints = GEQ
-    gcompare RollbackPoints ConfigCol = GLT
+    gcompare RollbackPoints _ = GLT
+    gcompare ConfigCol RollbackPoints = GGT
+    gcompare ConfigCol CSMTCol = GGT
     gcompare ConfigCol ConfigCol = GEQ
-    gcompare ConfigCol _ = GGT
+    gcompare ConfigCol _ = GLT
+    gcompare JournalCol JournalCol = GEQ
+    gcompare JournalCol _ = GGT
 
 -- | Prisms for serializing/deserializing keys and values
 data Prisms slot hash key value = Prisms
@@ -99,6 +107,11 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
         , ConfigCol
             :=> Codecs
                 { keyCodec = configKeyPrism
+                , valueCodec = prism' id Just
+                }
+        , JournalCol
+            :=> Codecs
+                { keyCodec = keyP
                 , valueCodec = prism' id Just
                 }
         ]

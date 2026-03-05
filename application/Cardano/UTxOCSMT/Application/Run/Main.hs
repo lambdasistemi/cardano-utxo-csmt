@@ -14,10 +14,12 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
+    , kvOnlyCSMTOps
     , mkCSMTOps
+    , replayJournal
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
-    ( createUpdateState
+    ( createSplitUpdateState
     , newRunRocksDBTransaction
     )
 import Cardano.UTxOCSMT.Application.Metrics
@@ -78,6 +80,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (SomeException, catch, displayException)
 import Control.Monad (when, (<=<))
 import Control.Tracer (Contravariant (..), nullTracer, traceWith)
+import Data.ByteString.Lazy qualified as BL
 import Data.Tracer.Intercept (intercept)
 import Data.Tracer.LogFile (logTracer)
 import Data.Tracer.ThreadSafe (newThreadSafeTracer)
@@ -161,7 +164,9 @@ main = withUtf8 $ do
         withRocksDB dbPath $ \db -> do
             -- Create runner first (no logging)
             let CSMTContext{fromKV = fkv, hashing = h} = context
-                ops = mkCSMTOps fkv h
+                fullOps = mkCSMTOps fkv h
+                kvOps = kvOnlyCSMTOps BL.toStrict
+                ops = fullOps
             runner <-
                 newRunRocksDBTransaction
                     db
@@ -215,10 +220,19 @@ main = withUtf8 $ do
                             | blockSlot >= chainTipSlot ->
                                 traceWith metricsEvent $ BootstrapPhaseEvent Synced
                         _ -> pure ()
+                isAtTip blockPoint chainTipSlot =
+                    case pointSlot blockPoint of
+                        At blockSlot -> blockSlot >= chainTipSlot
+                        _ -> False
+                replay =
+                    replayJournal 1000 BL.fromStrict fkv h runner
             (state, slots) <-
-                createUpdateState
+                createSplitUpdateState
                     (contra Update)
-                    ops
+                    kvOps
+                    fullOps
+                    replay
+                    isAtTip
                     slotHash
                     onForward
                     armageddonParams
