@@ -33,7 +33,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
     , RunTransaction (..)
-    , journalEmpty
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -176,7 +175,7 @@ newSplitState
     -> RunTransaction cf op slot hash key value m
     -> m (Update m slot key value, [slot])
 newSplitState
-    tw@TraceWith{tracer, trace}
+    tw@TraceWith{trace}
     kvOps
     fullOps
     replay
@@ -185,7 +184,7 @@ newSplitState
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact} = do
-        (cps, rollbackCount, empty) <-
+        (cps, rollbackCount) <-
             transact $ do
                 cps <-
                     iterating
@@ -193,35 +192,21 @@ newSplitState
                         sampleRollbackPoints
                 rollbackCount <-
                     Store.countPoints RollbackPoints
-                empty <- journalEmpty
-                pure (cps, rollbackCount, empty)
+                pure (cps, rollbackCount)
         trace $ UpdateNewState cps
-        if empty
-            then
-                pure
-                    $ (,cps)
-                    $ mkUpdate
-                        tracer
-                        fullOps
-                        slotHash
-                        onForward
-                        armageddonParams
-                        runTransaction
-                        rollbackCount
-            else
-                pure
-                    $ (,cps)
-                    $ mkSplitUpdate
-                        tw
-                        kvOps
-                        fullOps
-                        replay
-                        isAtTip
-                        slotHash
-                        onForward
-                        armageddonParams
-                        runTransaction
-                        rollbackCount
+        pure
+            $ (,cps)
+            $ mkSplitUpdate
+                tw
+                kvOps
+                fullOps
+                replay
+                isAtTip
+                slotHash
+                onForward
+                armageddonParams
+                runTransaction
+                rollbackCount
 
 {- | Apply forward tip .
 We compose csmt transactions for each operation with an updateRollbackPoint one
