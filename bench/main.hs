@@ -1,6 +1,9 @@
 module Main (main) where
 
 import Bench.CSMT (loadGoldenUtxos, runInsertBench)
+import Bench.Deserialization
+    ( benchDeserialization
+    )
 import Criterion.Main
     ( bench
     , bgroup
@@ -15,8 +18,15 @@ main =
         [ env loadGoldenUtxos $ \utxos ->
             bgroup
                 "CSMT"
-                [ bench ("insert " ++ show (length utxos) ++ " UTxOs")
+                [ bench
+                    ( "insert "
+                        ++ show (length utxos)
+                        ++ " UTxOs"
+                    )
                     $ nfIO
                     $ runInsertBench utxos
                 ]
+        , env
+            loadGoldenUtxos
+            benchDeserialization
         ]
