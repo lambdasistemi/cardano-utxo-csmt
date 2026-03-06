@@ -12,6 +12,9 @@ import Bench.CSMT
     , runRepeatedTransactionsBench
     , runStressBench
     )
+import Bench.Deserialization
+    ( benchDeserialization
+    )
 import Criterion.Main
     ( bench
     , bgroup
@@ -136,4 +139,7 @@ criterionMain =
                     $ nfIO
                     $ runPureSerializationBench utxos
                 ]
+        , env
+            loadGoldenUtxos
+            benchDeserialization
         ]
