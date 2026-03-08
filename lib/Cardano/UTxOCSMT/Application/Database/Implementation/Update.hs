@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-redundant-constraints -Wno-unused-imports #-}
+
 module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( mkUpdate
     , mkSplitUpdate
@@ -24,6 +26,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
+    , ConfigKey (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( Meta
@@ -41,9 +44,11 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , Update (..)
     )
 import Control.Monad (forM, forM_)
+import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
 import Data.Function (fix)
+import GHC.Clock (getMonotonicTimeNSec)
 import Data.List.SampleFibonacci
     ( sampleAtFibonacciIntervals
     )
@@ -64,8 +69,9 @@ import Database.KV.Cursor
     )
 import Database.KV.Transaction
     ( Transaction
+    , delete
+    , insert
     , iterating
-    , query
     )
 import MTS.Rollbacks.Store qualified as Store
 import MTS.Rollbacks.Types qualified as RP
@@ -86,6 +92,15 @@ data UpdateTrace slot hash
     | UpdateForwardTip slot Int Int (Maybe hash)
     | UpdateNewState [slot]
     | UpdateJournalReplay
+    | UpdateTransactStart slot Int
+    | UpdateTransactEnd slot
+    | UpdateQueryTipDone slot
+    | UpdateOpsDone slot
+    | UpdateRollbackDone slot
+    | UpdateTransactUs slot Int Int
+    -- ^ slot, microseconds, block count
+    | UpdateFinalityUs Int
+    -- ^ microseconds for the finality check
     deriving (Show)
 
 renderUpdateTrace :: Show slot => UpdateTrace slot hash -> String
@@ -102,6 +117,29 @@ renderUpdateTrace (UpdateNewState slots) =
     "New update state with rollback points at: " ++ show slots
 renderUpdateTrace UpdateJournalReplay =
     "Replaying journal to build CSMT tree"
+renderUpdateTrace (UpdateTransactStart slot nOps) =
+    "Transact start at "
+        ++ show slot
+        ++ " ("
+        ++ show nOps
+        ++ " ops)"
+renderUpdateTrace (UpdateTransactEnd slot) =
+    "Transact end at " ++ show slot
+renderUpdateTrace (UpdateQueryTipDone slot) =
+    "QueryTip done at " ++ show slot
+renderUpdateTrace (UpdateOpsDone slot) =
+    "Ops done at " ++ show slot
+renderUpdateTrace (UpdateRollbackDone slot) =
+    "Rollback done at " ++ show slot
+renderUpdateTrace (UpdateTransactUs slot us blocks) =
+    "Transact "
+        ++ show us
+        ++ "us at "
+        ++ show slot
+        ++ " #"
+        ++ show blocks
+renderUpdateTrace (UpdateFinalityUs us) =
+    "Finality " ++ show us ++ "us"
 
 newState
     :: (Ord key, Ord slot, Show slot, MonadFail m)
@@ -151,7 +189,7 @@ If the journal is non-empty, start in KVOnly mode (will replay
 on first tip touch). If empty, start in Full mode directly.
 -}
 newSplitState
-    :: (Ord key, Ord slot, Show slot, MonadFail m)
+    :: (Ord key, Ord slot, Show slot, MonadFail m, MonadIO m)
     => Tracer m (UpdateTrace slot hash)
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
@@ -212,7 +250,7 @@ newSplitState
 We compose csmt transactions for each operation with an updateRollbackPoint one
 -}
 forwardTip
-    :: (Ord key, Ord slot, Show slot, MonadFail m)
+    :: (Ord slot, MonadFail m)
     => Tracer m (UpdateTrace slot hash)
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
@@ -234,54 +272,36 @@ forwardTip
         Bool
 forwardTip
     TraceWith{trace}
-    CSMTOps{csmtInsert, csmtDelete, csmtRootHash}
-    hash
-    count
+    CSMTOps{csmtInsert, csmtDelete}
+    _hash
+    _count
     slot
     ops = do
-        tip <- queryTip
-        if At slot > tip
-            && (not (null ops) || count < 2)
-            then do
-                result <-
-                    forM (zip [0 :: Int ..] ops) $ \case
-                        (_, Insert k v) -> do
-                            csmtInsert k v
-                            pure (Sum 1, Sum 0, [Delete k])
-                        (i, Delete k) -> do
-                            mx <- query KVCol k
-                            csmtDelete k
-                            case mx of
-                                Nothing ->
-                                    error
-                                        $ "forwardTip: cannot"
-                                            <> " invert Delete"
-                                            <> " at slot "
-                                            <> show slot
-                                            <> " op #"
-                                            <> show i
-                                Just x ->
-                                    pure
-                                        ( Sum 0
-                                        , Sum 1
-                                        , [Insert k x]
-                                        )
-                let (Sum nInserts, Sum nDeletes, invs) =
-                        mconcat result
-                merkleRoot <-
-                    updateRollbackPoint
-                        csmtRootHash
-                        hash
-                        slot
-                        $ reverse invs
-                lift . lift . trace
-                    $ UpdateForwardTip
-                        slot
-                        nInserts
-                        nDeletes
-                        merkleRoot
-                pure True
-            else pure False
+        -- BENCHMARK: skip queryTip, always process
+        result <-
+            forM ops $ \case
+                Insert k v -> do
+                    csmtInsert k v
+                    pure (Sum 1, Sum 0)
+                Delete k -> do
+                    csmtDelete k
+                    pure (Sum 0, Sum 1)
+        let (Sum nInserts, Sum nDeletes) =
+                mconcat result
+        lift . lift . trace $ UpdateOpsDone slot
+        -- DIAGNOSTIC F: RollbackPoints with At slot keys
+        -- + reversed bytes in codec (non-monotonic in RocksDB)
+        Store.storeRollbackPoint
+            RollbackPoints
+            (At slot)
+            $ UTxORollbackPoint _hash [] Nothing
+        lift . lift . trace
+            $ UpdateForwardTip
+                slot
+                nInserts
+                nDeletes
+                Nothing
+        pure True
 
 updateRollbackPoint
     :: (Ord slot, Monad m)
@@ -364,22 +384,27 @@ mkUpdate
         go count =
             Update
                 { forwardTipApply =
-                    \slot chainTip operations -> do
-                        stored <-
-                            transact
-                                $ forwardTip
-                                    tracer
-                                    ops
-                                    (slotHash slot)
-                                    count
-                                    slot
-                                    operations
-                        onForward slot chainTip
-                        pure
-                            $ go
-                            $ if stored
-                                then count + 1
-                                else count
+                    \slot chainTip operations ->
+                        if null operations && count >= 2
+                            then do
+                                onForward slot chainTip
+                                pure $ go count
+                            else do
+                                stored <-
+                                    transact
+                                        $ forwardTip
+                                            tracer
+                                            ops
+                                            (slotHash slot)
+                                            count
+                                            slot
+                                            operations
+                                onForward slot chainTip
+                                pure
+                                    $ go
+                                    $ if stored
+                                        then count + 1
+                                        else count
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -430,7 +455,7 @@ The follower is blocked during replay (forwardTipApply runs
 synchronously), making the transition atomic w.r.t. chain sync.
 -}
 mkSplitUpdate
-    :: (Ord key, Ord slot, Show slot, MonadFail m)
+    :: (Ord key, Ord slot, Show slot, MonadFail m, MonadIO m)
     => Tracer m (UpdateTrace slot hash)
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
@@ -471,28 +496,55 @@ mkSplitUpdate
         goKVOnly count =
             Update
                 { forwardTipApply =
-                    \slot chainTip operations -> do
-                        stored <-
-                            transact
-                                $ forwardTip
-                                    tracer
-                                    kvOps
-                                    (slotHash slot)
-                                    count
-                                    slot
-                                    operations
-                        onForward slot chainTip
-                        let count' =
-                                if stored
-                                    then count + 1
-                                    else count
-                        if isAtTip slot chainTip
+                    \slot chainTip operations ->
+                        if null operations && count >= 2
                             then do
-                                trace UpdateJournalReplay
-                                replay
-                                pure $ goFull count'
-                            else
-                                pure $ goKVOnly count'
+                                onForward slot chainTip
+                                if isAtTip slot chainTip
+                                    then do
+                                        trace UpdateJournalReplay
+                                        replay
+                                        pure $ goFull count
+                                    else
+                                        pure $ goKVOnly count
+                            else do
+                                t0 <-
+                                    liftIO
+                                        getMonotonicTimeNSec
+                                stored <-
+                                    transact
+                                        $ forwardTip
+                                            tracer
+                                            kvOps
+                                            (slotHash slot)
+                                            count
+                                            slot
+                                            operations
+                                t1 <-
+                                    liftIO
+                                        getMonotonicTimeNSec
+                                let us =
+                                        fromIntegral
+                                            (t1 - t0)
+                                            `div` 1000
+                                            :: Int
+                                let count' =
+                                        if stored
+                                            then count + 1
+                                            else count
+                                trace
+                                    $ UpdateTransactUs
+                                        slot
+                                        us
+                                        count'
+                                onForward slot chainTip
+                                if isAtTip slot chainTip
+                                    then do
+                                        trace UpdateJournalReplay
+                                        replay
+                                        pure $ goFull count'
+                                    else
+                                        pure $ goKVOnly count'
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -525,11 +577,24 @@ mkSplitUpdate
                         armageddonCall
                         pure $ Syncing $ goKVOnly 0
                 , forwardFinalityApply = \s -> do
+                    t0 <-
+                        liftIO
+                            getMonotonicTimeNSec
                     pruned <-
                         transact
                             $ Store.pruneBelow
                                 RollbackPoints
                                 (At s)
+                    t1 <-
+                        liftIO
+                            getMonotonicTimeNSec
+                    let us =
+                            fromIntegral
+                                (t1 - t0)
+                                `div` 1000
+                                :: Int
+                    trace
+                        $ UpdateFinalityUs us
                     pure
                         $ goKVOnly (count - pruned)
                 }

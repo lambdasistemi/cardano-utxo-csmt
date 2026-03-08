@@ -12,11 +12,18 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( RollbackPointKV
-    , rollbackPointPrism
-    , withOriginPrism
     )
-import Control.Lens (Prism', prism', type (:~:) (Refl))
+import MTS.Rollbacks.Types qualified as RP
+import Ouroboros.Network.Point (WithOrigin (..))
+import Control.Lens
+    ( Prism'
+    , preview
+    , prism'
+    , review
+    , type (:~:) (Refl)
+    )
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as B
 import Database.KV.Transaction
     ( Codecs (..)
     , DMap
@@ -101,9 +108,32 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
         , CSMTCol :=> csmtCBORCodecs hashP
         , RollbackPoints
             :=> Codecs
-                { keyCodec = withOriginPrism slotP
-                , valueCodec = rollbackPointPrism hashP keyP valueP
+                -- DIAGNOSTIC D: monotonic slot keys (normal order)
+                { keyCodec = prism'
+                    ( \case
+                        At s -> review slotP s
+                        Origin -> "origin"
+                    )
+                    ( \bs ->
+                        if bs == "origin"
+                            then Just Origin
+                            else At <$> preview slotP bs
+                    )
+                , valueCodec = prism'
+                    (const "bench")
+                    ( const
+                        $ Just
+                        $ RP.RollbackPoint
+                            { rpInverses = []
+                            , rpMeta = Nothing
+                            }
+                    )
                 }
+                -- ORIGINAL:
+                -- { keyCodec = withOriginPrism slotP
+                -- , valueCodec =
+                --     rollbackPointPrism hashP keyP valueP
+                -- }
         , ConfigCol
             :=> Codecs
                 { keyCodec = configKeyPrism

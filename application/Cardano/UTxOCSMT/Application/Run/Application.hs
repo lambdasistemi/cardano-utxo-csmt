@@ -65,6 +65,7 @@ import Ouroboros.Network.PeerSelection.RelayAccessPoint (PortNumber)
 import Ouroboros.Network.Point
     ( WithOrigin (..)
     )
+import GHC.Clock (getMonotonicTimeNSec)
 import System.IO (BufferMode (..), hSetBuffering, stdout)
 
 -- | Events emitted by the application
@@ -77,6 +78,12 @@ data ApplicationTrace
       ApplicationBlockProcessed SlotNo Int Int
     | -- | Header sync progress during Mithril catch-up
       ApplicationHeaderSkipProgress HeaderSkipProgress
+    | -- | Finality check result
+      ApplicationFinalityResult (Maybe Point)
+    | -- | Finality pruned
+      ApplicationFinalityPruned Point
+    | -- | Finality check duration in microseconds
+      ApplicationFinalityUs Int
     deriving (Show)
 
 -- | Render an 'ApplicationTrace'
@@ -100,6 +107,14 @@ renderApplicationTrace (ApplicationHeaderSkipProgress progress) =
         ++ show (unSlotNo $ skipCurrentSlot progress)
         ++ " / "
         ++ show (unSlotNo $ skipTargetSlot progress)
+renderApplicationTrace (ApplicationFinalityResult Nothing) =
+    "Finality: Nothing"
+renderApplicationTrace (ApplicationFinalityResult (Just p)) =
+    "Finality: Just " ++ show p
+renderApplicationTrace (ApplicationFinalityPruned p) =
+    "Finality pruned at " ++ show p
+renderApplicationTrace (ApplicationFinalityUs us) =
+    "Finality check " ++ show us ++ "us"
 
 origin :: Network.Point block
 origin = Network.Point{getPoint = Origin}
@@ -174,10 +189,20 @@ follower
                     Syncing update -> do
                         newUpdate <-
                             forwardTipApply update fetchedPoint tipSlot ops
+                        t0 <- getMonotonicTimeNSec
                         finality <- newFinalityTarget
+                        t1 <- getMonotonicTimeNSec
+                        let us =
+                                fromIntegral (t1 - t0)
+                                    `div` 1000
+                                    :: Int
+                        trace $ ApplicationFinalityResult finality
+                        trace $ ApplicationFinalityUs us
                         Syncing <$> case finality of
                             Nothing -> pure newUpdate
-                            Just slot -> forwardFinalityApply newUpdate slot
+                            Just slot -> do
+                                trace $ ApplicationFinalityPruned slot
+                                forwardFinalityApply newUpdate slot
                     _ -> error "follower: cannot roll forward while intersecting"
                 pure $ go newDB
             , rollBackward = \point ->

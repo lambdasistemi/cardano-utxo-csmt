@@ -152,7 +152,7 @@ createUpdateState tracer ops slotHash onForward armageddonParams runner = do
 Starts in KVOnly mode if journal is non-empty, otherwise Full.
 -}
 createSplitUpdateState
-    :: (MonadFail m, Ord key, Ord slot, Show slot)
+    :: (MonadFail m, MonadIO m, Ord key, Ord slot, Show slot)
     => Tracer m (UpdateTrace slot hash)
     -> CSMTOps
         (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
