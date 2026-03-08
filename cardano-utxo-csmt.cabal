@@ -437,7 +437,9 @@ test-suite e2e-tests
   type:             exitcode-stdio-1.0
   hs-source-dirs:   e2e-test
   main-is:          main.hs
-  other-modules:    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
+  other-modules:
+    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
+    Cardano.UTxOCSMT.E2E.MapColumnsChainSyncSpec
   build-depends:
     , base
     , bytestring
@@ -446,12 +448,15 @@ test-suite e2e-tests
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
     , contra-tracer
+    , dependent-map
     , directory
     , filepath
     , hspec
+    , lens
     , ouroboros-network-api
     , process
     , rocksdb-haskell-jprupp
+    , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
     , temporary
     , time
