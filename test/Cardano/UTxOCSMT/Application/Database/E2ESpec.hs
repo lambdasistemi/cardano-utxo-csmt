@@ -26,6 +26,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( mkCSMTOps
     )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Update
+    ( allOps
+    )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     , State (..)
@@ -132,6 +135,7 @@ withFreshDB action =
                 ((update, _rollbackPoints), _runner) <-
                     newRocksDBState
                         nullTracer
+                        allOps
                         db
                         testPrisms
                         (mkCSMTOps testFromKV testHashing)
@@ -388,6 +392,7 @@ spec = describe "E2E newRocksDBState" $ do
                     ((_, rollbackPoints), _) <-
                         newRocksDBState
                             nullTracer
+                            allOps
                             db
                             testPrisms
                             (mkCSMTOps testFromKV testHashing)

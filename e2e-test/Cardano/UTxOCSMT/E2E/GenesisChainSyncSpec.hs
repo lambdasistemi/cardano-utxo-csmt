@@ -17,6 +17,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , mkCSMTOps
     )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Update
+    ( allOps
+    )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createUpdateState
     , newRunRocksDBTransaction
@@ -125,6 +128,7 @@ spec = describe "Genesis chain sync" $ do
                                     (state, slots) <-
                                         createUpdateState
                                             nullTracer
+                                            allOps
                                             ops
                                             slotHash
                                             (\_ _ -> pure ())

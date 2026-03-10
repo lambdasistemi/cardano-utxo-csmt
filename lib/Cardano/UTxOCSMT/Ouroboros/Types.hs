@@ -66,6 +66,9 @@ type family TipOf slot
 -- | The chain tip for a 'Point' is a 'SlotNo'
 type instance TipOf Point = Network.SlotNo
 
+-- | Trivial tip for unit-slot benchmarks
+type instance TipOf () = ()
+
 -- | The header hash type used in the chain sync connection
 type HeaderHash = Network.HeaderHash Block
 

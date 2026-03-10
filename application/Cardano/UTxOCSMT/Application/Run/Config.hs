@@ -121,7 +121,7 @@ config =
         , paranoidChecks = False
         , maxFiles = Nothing
         , prefixLength = Nothing
-        , bloomFilter = False
+        , bloomFilter = True
         }
 
 {- | Parameters for the armageddon (database reset) operation.
@@ -304,7 +304,7 @@ mFinality (RunTransaction runTx) =
         -> WithOrigin Point
         -> Bool
     isFinal tip finality =
-        distance tip finality > 2160
+        distance tip finality > 2160 * 20
 
 {- | Calculate the slot distance between two points.
 

@@ -33,7 +33,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( UpdateTrace
+    ( BenchOps
+    , UpdateTrace
     , newSplitState
     , newState
     )
@@ -98,6 +99,7 @@ newRocksDBState
        , MonadMask m
        )
     => Tracer m (UpdateTrace slot hash)
+    -> BenchOps
     -> DB
     -> Prisms slot hash key value
     -> CSMTOps
@@ -116,6 +118,7 @@ newRocksDBState
         )
 newRocksDBState
     tracer
+    benchOps
     db
     prisms
     ops
@@ -123,14 +126,26 @@ newRocksDBState
     onForward
     armageddonParams = do
         runner <- newRunRocksDBTransaction db prisms
-        ensureInitialized runner armageddonParams
+        _ <- ensureInitialized runner armageddonParams
         (,runner)
-            <$> newState tracer ops slotHash onForward armageddonParams runner
+            <$> newState
+                tracer
+                benchOps
+                ops
+                slotHash
+                onForward
+                armageddonParams
+                runner
 
 -- | Create Update state from an existing runner
 createUpdateState
-    :: (MonadFail m, Ord key, Ord slot, Show slot)
+    :: ( MonadFail m
+       , Ord key
+       , Ord slot
+       , Show slot
+       )
     => Tracer m (UpdateTrace slot hash)
+    -> BenchOps
     -> CSMTOps
         (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
         key
@@ -143,17 +158,38 @@ createUpdateState
     -> ArmageddonParams hash
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
     -> m (Update m slot key value, [slot])
-createUpdateState tracer ops slotHash onForward armageddonParams runner = do
-    ensureInitialized runner armageddonParams
-    newState tracer ops slotHash onForward armageddonParams runner
+createUpdateState
+    tracer
+    benchOps
+    ops
+    slotHash
+    onForward
+    armageddonParams
+    runner = do
+        _ <- ensureInitialized runner armageddonParams
+        newState
+            tracer
+            benchOps
+            ops
+            slotHash
+            onForward
+            armageddonParams
+            runner
 
 {- | Create split-mode Update state from an existing runner.
 
 Starts in KVOnly mode if journal is non-empty, otherwise Full.
 -}
 createSplitUpdateState
-    :: (MonadFail m, Ord key, Ord slot, Show slot)
+    :: ( MonadFail m
+       , Ord key
+       , Ord slot
+       , Show slot
+       )
     => Tracer m (UpdateTrace slot hash)
+    -> BenchOps
+    -> Bool
+    -- ^ Whether the DB was freshly initialized (genesis)
     -> CSMTOps
         (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
         key
@@ -177,6 +213,8 @@ createSplitUpdateState
     -> m (Update m slot key value, [slot])
 createSplitUpdateState
     tracer
+    benchOps
+    isGenesis
     kvOps
     fullOps
     replay
@@ -185,9 +223,11 @@ createSplitUpdateState
     onForward
     armageddonParams
     runner = do
-        ensureInitialized runner armageddonParams
+        _ <- ensureInitialized runner armageddonParams
         newSplitState
             tracer
+            benchOps
+            isGenesis
             kvOps
             fullOps
             replay
@@ -200,13 +240,15 @@ createSplitUpdateState
 {- | Ensure the database has been initialized with an Origin rollback point.
 This makes the public API self-initializing so callers can't forget to
 call 'setup' before creating state.
+Returns 'True' if the DB was freshly initialized (genesis).
 -}
 ensureInitialized
     :: (Ord slot, Monad m)
     => RunTransaction cf op slot hash key value m
     -> ArmageddonParams hash
-    -> m ()
+    -> m Bool
 ensureInitialized runner@RunTransaction{transact} armageddonParams = do
     empty <-
         transact $ iterating RollbackPoints $ isNothing <$> firstEntry
     when empty $ setup nullTracer runner armageddonParams
+    pure empty

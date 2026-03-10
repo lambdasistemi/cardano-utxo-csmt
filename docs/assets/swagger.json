@@ -126,6 +126,30 @@
                     "format": "double",
                     "type": "number"
                 },
+                "avgBlockDecodeDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgCSMTDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgFinalityDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgRollbackDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgTotalBlockDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgTransactionDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
                 "baseCheckpoint": {
                     "type": "string"
                 },
@@ -147,6 +171,47 @@
                     "maximum": 1.8446744073709551615e19,
                     "minimum": 0,
                     "type": "integer"
+                },
+                "cumulativeBlockDecodeDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeBlocks": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "cumulativeCSMTDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeFinalityDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalCsmtOps": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalQueryTip": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalRollbackStore": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeRollbackDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeTotalBlockDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeTransactionDuration": {
+                    "format": "double",
+                    "type": "number"
                 },
                 "currentEra": {
                     "type": "string"
@@ -199,7 +264,23 @@
                 "extractionProgress",
                 "headerSyncProgress",
                 "downloadedBytes",
-                "countingProgress"
+                "avgCSMTDuration",
+                "avgRollbackDuration",
+                "avgFinalityDuration",
+                "avgBlockDecodeDuration",
+                "avgTransactionDuration",
+                "avgTotalBlockDuration",
+                "countingProgress",
+                "cumulativeBlocks",
+                "cumulativeBlockDecodeDuration",
+                "cumulativeTransactionDuration",
+                "cumulativeCSMTDuration",
+                "cumulativeRollbackDuration",
+                "cumulativeFinalityDuration",
+                "cumulativeTotalBlockDuration",
+                "cumulativeInternalQueryTip",
+                "cumulativeInternalCsmtOps",
+                "cumulativeInternalRollbackStore"
             ],
             "type": "object"
         },

@@ -31,6 +31,15 @@ module Cardano.UTxOCSMT.Application.Metrics.Types
     , _HeaderSyncProgressEvent
     , _DownloadProgressEvent
     , _CountingProgressEvent
+    , _CSMTDurationEvent
+    , _RollbackDurationEvent
+    , _FinalityDurationEvent
+    , _BlockDecodeDurationEvent
+    , _TransactionDurationEvent
+    , _TotalBlockDurationEvent
+    , _InternalQueryTipEvent
+    , _InternalCsmtOpsEvent
+    , _InternalRollbackStoreEvent
 
       -- * Progress types
     , ExtractionProgress (..)
@@ -144,6 +153,24 @@ data MetricsEvent
       DownloadProgressEvent Word64
     | -- | counting progress (UTxOs counted so far)
       CountingProgressEvent Word64
+    | -- | CSMT operation duration (seconds)
+      CSMTDurationEvent Double
+    | -- | Rollback point storage duration (seconds)
+      RollbackDurationEvent Double
+    | -- | Finality pruning duration (seconds)
+      FinalityDurationEvent Double
+    | -- | Block decode duration (seconds)
+      BlockDecodeDurationEvent Double
+    | -- | Transaction duration (seconds)
+      TransactionDurationEvent Double
+    | -- | Total block processing duration (seconds)
+      TotalBlockDurationEvent Double
+    | -- | Internal queryTip duration (microseconds)
+      InternalQueryTipEvent Double
+    | -- | Internal CSMT ops duration (microseconds)
+      InternalCsmtOpsEvent Double
+    | -- | Internal rollback store duration (microseconds)
+      InternalRollbackStoreEvent Double
     deriving (Show)
 
 makePrisms ''MetricsEvent
@@ -257,6 +284,38 @@ data Metrics = Metrics
     -- ^ Bytes downloaded during Mithril snapshot download
     , countingProgress :: Maybe Word64
     -- ^ UTxOs counted so far during counting phase
+    , avgCSMTDuration :: Double
+    -- ^ Average CSMT operation duration in microseconds
+    , avgRollbackDuration :: Double
+    -- ^ Average rollback point storage duration in microseconds
+    , avgFinalityDuration :: Double
+    -- ^ Average finality pruning duration in microseconds
+    , avgBlockDecodeDuration :: Double
+    -- ^ Average block decode duration in microseconds
+    , avgTransactionDuration :: Double
+    -- ^ Average transaction duration in microseconds
+    , avgTotalBlockDuration :: Double
+    -- ^ Average total block processing duration in microseconds
+    , cumulativeBlocks :: Int
+    -- ^ Total number of blocks processed
+    , cumulativeBlockDecodeDuration :: Double
+    -- ^ Cumulative block decode duration in microseconds
+    , cumulativeTransactionDuration :: Double
+    -- ^ Cumulative transaction duration in microseconds
+    , cumulativeCSMTDuration :: Double
+    -- ^ Cumulative CSMT operation duration in microseconds
+    , cumulativeRollbackDuration :: Double
+    -- ^ Cumulative rollback point storage duration in microseconds
+    , cumulativeFinalityDuration :: Double
+    -- ^ Cumulative finality pruning duration in microseconds
+    , cumulativeTotalBlockDuration :: Double
+    -- ^ Cumulative total block processing duration in microseconds
+    , cumulativeInternalQueryTip :: Double
+    -- ^ Cumulative internal queryTip duration in microseconds
+    , cumulativeInternalCsmtOps :: Double
+    -- ^ Cumulative internal CSMT ops duration in microseconds
+    , cumulativeInternalRollbackStore :: Double
+    -- ^ Cumulative internal rollback store duration in microseconds
     }
     deriving (Show)
 
@@ -278,6 +337,22 @@ instance ToJSON Metrics where
             , headerSyncProgress
             , downloadedBytes
             , countingProgress
+            , avgCSMTDuration
+            , avgRollbackDuration
+            , avgFinalityDuration
+            , avgBlockDecodeDuration
+            , avgTransactionDuration
+            , avgTotalBlockDuration
+            , cumulativeBlocks
+            , cumulativeBlockDecodeDuration
+            , cumulativeTransactionDuration
+            , cumulativeCSMTDuration
+            , cumulativeRollbackDuration
+            , cumulativeFinalityDuration
+            , cumulativeTotalBlockDuration
+            , cumulativeInternalQueryTip
+            , cumulativeInternalCsmtOps
+            , cumulativeInternalRollbackStore
             } =
             object
                 [ "averageQueueLength" .= averageQueueLength
@@ -296,6 +371,31 @@ instance ToJSON Metrics where
                 , "headerSyncProgress" .= headerSyncProgress
                 , "downloadedBytes" .= downloadedBytes
                 , "countingProgress" .= countingProgress
+                , "avgCSMTDuration" .= avgCSMTDuration
+                , "avgRollbackDuration" .= avgRollbackDuration
+                , "avgFinalityDuration" .= avgFinalityDuration
+                , "avgBlockDecodeDuration" .= avgBlockDecodeDuration
+                , "avgTransactionDuration" .= avgTransactionDuration
+                , "avgTotalBlockDuration" .= avgTotalBlockDuration
+                , "cumulativeBlocks" .= cumulativeBlocks
+                , "cumulativeBlockDecodeDuration"
+                    .= cumulativeBlockDecodeDuration
+                , "cumulativeTransactionDuration"
+                    .= cumulativeTransactionDuration
+                , "cumulativeCSMTDuration"
+                    .= cumulativeCSMTDuration
+                , "cumulativeRollbackDuration"
+                    .= cumulativeRollbackDuration
+                , "cumulativeFinalityDuration"
+                    .= cumulativeFinalityDuration
+                , "cumulativeTotalBlockDuration"
+                    .= cumulativeTotalBlockDuration
+                , "cumulativeInternalQueryTip"
+                    .= cumulativeInternalQueryTip
+                , "cumulativeInternalCsmtOps"
+                    .= cumulativeInternalCsmtOps
+                , "cumulativeInternalRollbackStore"
+                    .= cumulativeInternalRollbackStore
                 ]
 
 -- | Render a block point as a string for display
@@ -345,6 +445,46 @@ instance ToSchema Metrics where
                     , ("headerSyncProgress", maybeHeaderSyncProgressSchema)
                     , ("downloadedBytes", maybeWord64Schema)
                     , ("countingProgress", maybeWord64Schema)
+                    , ("avgCSMTDuration", doubleSchema)
+                    , ("avgRollbackDuration", doubleSchema)
+                    , ("avgFinalityDuration", doubleSchema)
+                    , ("avgBlockDecodeDuration", doubleSchema)
+                    , ("avgTransactionDuration", doubleSchema)
+                    , ("avgTotalBlockDuration", doubleSchema)
+                    , ("cumulativeBlocks", intSchema)
+                    ,
+                        ( "cumulativeBlockDecodeDuration"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeTransactionDuration"
+                        , doubleSchema
+                        )
+                    , ("cumulativeCSMTDuration", doubleSchema)
+                    ,
+                        ( "cumulativeRollbackDuration"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeFinalityDuration"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeTotalBlockDuration"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeInternalQueryTip"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeInternalCsmtOps"
+                        , doubleSchema
+                        )
+                    ,
+                        ( "cumulativeInternalRollbackStore"
+                        , doubleSchema
+                        )
                     ]
             & required
                 .~ [ "averageQueueLength"
@@ -361,7 +501,23 @@ instance ToSchema Metrics where
                    , "extractionProgress"
                    , "headerSyncProgress"
                    , "downloadedBytes"
+                   , "avgCSMTDuration"
+                   , "avgRollbackDuration"
+                   , "avgFinalityDuration"
+                   , "avgBlockDecodeDuration"
+                   , "avgTransactionDuration"
+                   , "avgTotalBlockDuration"
                    , "countingProgress"
+                   , "cumulativeBlocks"
+                   , "cumulativeBlockDecodeDuration"
+                   , "cumulativeTransactionDuration"
+                   , "cumulativeCSMTDuration"
+                   , "cumulativeRollbackDuration"
+                   , "cumulativeFinalityDuration"
+                   , "cumulativeTotalBlockDuration"
+                   , "cumulativeInternalQueryTip"
+                   , "cumulativeInternalCsmtOps"
+                   , "cumulativeInternalRollbackStore"
                    ]
             & description
                 ?~ "Metrics about CSMT operations and blockchain synchronization"

@@ -472,7 +472,9 @@ benchmark bench
     , contra-tracer
     , criterion
     , lens
+    , mtl
     , mts:csmt
     , rocksdb-haskell-jprupp
+    , rocksdb-kv-transactions:kv-transactions
     , serialise
     , temporary

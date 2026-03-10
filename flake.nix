@@ -56,12 +56,22 @@
               inherit project;
             };
 
+            docker-image-profiled = pkgs.dockerTools.buildImage {
+              name = "ghcr.io/paolino/cardano-utxo-csmt/cardano-utxo-csmt";
+              tag = "${version}-profiled";
+              config = { EntryPoint = [ "cardano-utxo" ]; };
+              copyToRoot = pkgs.buildEnv {
+                name = "image-root";
+                paths = [ project.packages.cardano-utxo-profiled ];
+              };
+            };
+
           in rec {
             packages = {
               inherit (project.packages)
                 bench unit-tests integration-tests e2e-tests cardano-utxo
-                cardano-utxo-swagger;
-              inherit docker-image;
+                cardano-utxo-swagger cardano-utxo-profiled bench-profiled;
+              inherit docker-image docker-image-profiled;
               default = packages.cardano-utxo;
             };
             inherit (project) devShells;

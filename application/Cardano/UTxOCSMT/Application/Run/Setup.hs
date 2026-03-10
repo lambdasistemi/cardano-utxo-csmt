@@ -100,6 +100,8 @@ data SetupResult = SetupResult
     -- ^ Starting point for chain sync (Origin or Mithril checkpoint)
     , setupMithrilSlot :: Maybe Word64
     -- ^ If bootstrapped from Mithril, the slot to skip headers until
+    , setupIsGenesis :: Bool
+    -- ^ True if the DB was freshly initialized (no prior data)
     }
 
 {- | Set up the database, potentially bootstrapping from Mithril or genesis.
@@ -207,6 +209,7 @@ setupDB
                             SetupResult
                                 { setupStartingPoint = point
                                 , setupMithrilSlot = skipSlot
+                                , setupIsGenesis = False
                                 }
       where
         -- \| Validate node connection, returning True if OK or skipped
@@ -263,6 +266,7 @@ setupDB
                     SetupResult
                         { setupStartingPoint = startingPoint
                         , setupMithrilSlot = Nothing
+                        , setupIsGenesis = True
                         }
 
         genesisSetup = do
@@ -289,6 +293,7 @@ setupDB
                 SetupResult
                     { setupStartingPoint = originPoint
                     , setupMithrilSlot = Nothing
+                    , setupIsGenesis = True
                     }
 
         bootstrapFromMithril = do
@@ -377,6 +382,7 @@ setupDB
                                 SetupResult
                                     { setupStartingPoint = importCheckpoint
                                     , setupMithrilSlot = Just importSlot
+                                    , setupIsGenesis = True
                                     }
                         ImportFailed err -> do
                             trace $ Mithril $ ImportError err

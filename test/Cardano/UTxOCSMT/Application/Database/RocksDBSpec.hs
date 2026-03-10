@@ -41,7 +41,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( mkUpdate
+    ( allOps
+    , mkUpdate
     )
 import Cardano.UTxOCSMT.Application.Database.Interface (TipOf)
 import Cardano.UTxOCSMT.Application.Database.Properties
@@ -218,6 +219,7 @@ runRocksDBProperties prop =
     update runner =
         mkUpdate
             nullTracer
+            allOps
             (mkCSMTOps fkv h)
             (const $ mkHash "")
             (\_ _ -> pure ())

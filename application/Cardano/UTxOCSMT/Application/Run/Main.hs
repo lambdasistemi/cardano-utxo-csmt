@@ -18,6 +18,10 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     , replayJournal
     )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Update
+    ( allOps
+    , measureUpdateDurations
+    )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createSplitUpdateState
     , newRunRocksDBTransaction
@@ -81,11 +85,12 @@ import Control.Exception (SomeException, catch, displayException)
 import Control.Monad (when, (<=<))
 import Control.Tracer (Contravariant (..), nullTracer, traceWith)
 import Data.ByteString.Lazy qualified as BL
+import Data.Time.Clock (diffUTCTime)
 import Data.Tracer.Intercept (intercept)
 import Data.Tracer.LogFile (logTracer)
 import Data.Tracer.ThreadSafe (newThreadSafeTracer)
 import Data.Tracer.Throttle (throttleByFrequency)
-import Data.Tracer.Timestamp (timestampTracer)
+import Data.Tracer.Timestamp (utcTimestampTracer)
 import Data.Tracer.TraceWith
     ( contra
     , trace
@@ -152,9 +157,10 @@ main = withUtf8 $ do
             fmap (intercept metricsEvent stealMetricsEvent) $ do
                 throttled <-
                     throttleByFrequency
+                        (\t1 t2 -> realToFrac (diffUTCTime t2 t1))
                         [matchHighFrequencyEvents]
                         (contramap renderThrottledMainTraces appTracer)
-                newThreadSafeTracer $ timestampTracer throttled
+                newThreadSafeTracer $ utcTimestampTracer throttled
         startHTTPService
             (trace . HTTPServiceError)
             (trace ServeDocs)
@@ -198,7 +204,7 @@ main = withUtf8 $ do
                             (n2nHost, n2nPort, skipNodeValidation options)
                         N2C{} ->
                             ("localhost", 0, True)
-            SetupResult{setupStartingPoint, setupMithrilSlot} <-
+            SetupResult{setupStartingPoint, setupMithrilSlot, setupIsGenesis} <-
                 setupDB
                     tracer
                     startingPoint
@@ -226,9 +232,13 @@ main = withUtf8 $ do
                         _ -> False
                 replay =
                     replayJournal 1000 BL.fromStrict fkv h runner
+            updateTracer <-
+                measureUpdateDurations (contra Update)
             (state, slots) <-
                 createSplitUpdateState
-                    (contra Update)
+                    updateTracer
+                    allOps
+                    setupIsGenesis
                     kvOps
                     fullOps
                     replay
