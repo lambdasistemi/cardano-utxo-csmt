@@ -6,14 +6,14 @@ on:
 jobs:
   e2e-preview:
     name: E2E Preview Network Test
-    runs-on: ubuntu-latest
+    runs-on: nixos
     timeout-minutes: 40
     steps:
-      - run: sudo rm -rf /opt&
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build executable
         run: nix build .#cardano-utxo --quiet
       - name: Run Mithril bootstrap and chain sync

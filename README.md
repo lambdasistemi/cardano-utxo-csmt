@@ -1,7 +1,7 @@
 # Cardano UTxO CSMT
 
-[![CI](https://github.com/paolino/cardano-utxo-csmt/actions/workflows/CI.yaml/badge.svg)](https://github.com/paolino/cardano-utxo-csmt/actions/workflows/CI.yaml)
-[![Documentation](https://github.com/paolino/cardano-utxo-csmt/actions/workflows/deploy-docs.yaml/badge.svg)](https://github.com/paolino/cardano-utxo-csmt/actions/workflows/deploy-docs.yaml)
+[![CI](https://github.com/lambdasistemi/cardano-utxo-csmt/actions/workflows/CI.yaml/badge.svg)](https://github.com/lambdasistemi/cardano-utxo-csmt/actions/workflows/CI.yaml)
+[![Documentation](https://github.com/lambdasistemi/cardano-utxo-csmt/actions/workflows/deploy-docs.yaml/badge.svg)](https://github.com/lambdasistemi/cardano-utxo-csmt/actions/workflows/deploy-docs.yaml)
 
 An HTTP service that maintains a Compact Sparse Merkle Tree (CSMT) over Cardano's UTxO set, enabling efficient cryptographic inclusion proofs.
 
@@ -15,15 +15,15 @@ An HTTP service that maintains a Compact Sparse Merkle Tree (CSMT) over Cardano'
 
 ## Documentation
 
-Full documentation available at **[paolino.github.io/cardano-utxo-csmt](https://paolino.github.io/cardano-utxo-csmt/)**
+Full documentation available at **[lambdasistemi.github.io/cardano-utxo-csmt](https://lambdasistemi.github.io/cardano-utxo-csmt/)**
 
-- [Getting Started](https://paolino.github.io/cardano-utxo-csmt/getting-started/)
-- [Architecture](https://paolino.github.io/cardano-utxo-csmt/architecture/)
-- [API Reference](https://paolino.github.io/cardano-utxo-csmt/swagger-ui/)
+- [Getting Started](https://lambdasistemi.github.io/cardano-utxo-csmt/getting-started/)
+- [Architecture](https://lambdasistemi.github.io/cardano-utxo-csmt/architecture/)
+- [API Reference](https://lambdasistemi.github.io/cardano-utxo-csmt/swagger-ui/)
 
 ## Roadmap
 
-See [Milestones](https://github.com/paolino/cardano-utxo-csmt/milestones) for planned releases and progress.
+See [Milestones](https://github.com/lambdasistemi/cardano-utxo-csmt/milestones) for planned releases and progress.
 
 ## License
 

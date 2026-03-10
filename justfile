@@ -59,8 +59,8 @@ build-docker tag='latest':
     nix build .#docker-image
     docker load < result
     version=$(nix eval --raw .#version)
-    docker image tag ghcr.io/paolino/cardano-utxo-csmt/cardano-utxo:"$version" \
-        "ghcr.io/paolino/cardano-utxo-csmt/cardano-utxo:{{ tag }}"
+    docker image tag ghcr.io/lambdasistemi/cardano-utxo-csmt/cardano-utxo:"$version" \
+        "ghcr.io/lambdasistemi/cardano-utxo-csmt/cardano-utxo:{{ tag }}"
 
 start-docker bg="false":
     #!/usr/bin/env bash
@@ -86,7 +86,7 @@ stop-docker:
 
 push-docker tag='latest':
     #!/usr/bin/env bash
-    docker push "ghcr.io/paolino/cardano-utxo-csmt/cardano-utxo:{{ tag }}"
+    docker push "ghcr.io/lambdasistemi/cardano-utxo-csmt/cardano-utxo:{{ tag }}"
 
 release version arch:
     #!/usr/bin/env bash

@@ -1,6 +1,6 @@
 site_name: Cardano UTXO CSMT
-site_url: https://paolino.github.io/cardano-utxo-csmt/
-repo_url: https://github.com/paolino/cardano-utxo-csmt
+site_url: https://lambdasistemi.github.io/cardano-utxo-csmt/
+repo_url: https://github.com/lambdasistemi/cardano-utxo-csmt
 
 theme:
   name: material

@@ -213,5 +213,5 @@ A JSON file with UTxO set root hashes covering the rollback window, updated ever
 
 **Resources**
 
-- GitHub: `paolino/cardano-utxo-csmt`
+- GitHub: `lambdasistemi/cardano-utxo-csmt`
 - Documentation: `/docs`

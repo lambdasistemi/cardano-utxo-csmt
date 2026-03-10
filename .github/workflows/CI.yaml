@@ -4,16 +4,20 @@ on:
   workflow_dispatch:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
-      - run: sudo rm -rf /opt&
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build executable
         run: nix build .#cardano-utxo --quiet
       - name: Build e2e-tests
@@ -48,32 +52,35 @@ jobs:
           path: cardano-utxo.deb
   unit:
     name: Run unit Tests
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Tests
         run: nix run .#unit-tests --quiet
   bench:
     name: Run Benchmarks
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Benchmarks
         run: nix run .#bench --quiet
   formatting:
     name: Check code formatting
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Check Formatting
         run: |
           nix develop --quiet -c just format
@@ -83,12 +90,13 @@ jobs:
           fi
   hlint:
     name: HLint
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run HLint
         run: nix develop --quiet -c just hlint
   e2e:
@@ -146,12 +154,13 @@ jobs:
   swagger:
     # check that the swagger file is up to date
     name: Check Swagger documentation
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: paolino/dev-assets/setup-nix@v0.0.1
+      - uses: cachix/cachix-action@v15
         with:
-          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Check Swagger
         run: |
           nix develop --quiet -c just update-swagger

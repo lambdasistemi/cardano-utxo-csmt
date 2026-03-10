@@ -49,6 +49,6 @@ Each block updates the tree, producing a new Merkle root that commits to the ent
 
 ## Links
 
-- [GitHub Repository](https://github.com/paolino/cardano-utxo-csmt)
+- [GitHub Repository](https://github.com/lambdasistemi/cardano-utxo-csmt)
 - [API Documentation](swagger-ui.md)
 - [Architecture Overview](architecture.md)
