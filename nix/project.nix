@@ -66,4 +66,8 @@ in {
     project.hsPkgs.cardano-utxo-csmt.components.tests.cardano-utxo-csmt-integration-test;
   packages.e2e-tests =
     project.hsPkgs.cardano-utxo-csmt.components.tests.e2e-tests;
+  packages.cardano-utxo-profiled =
+    project.hsPkgs.cardano-utxo-csmt.components.exes.cardano-utxo.profiled;
+  packages.bench-profiled =
+    project.hsPkgs.cardano-utxo-csmt.components.benchmarks.bench.profiled;
 }

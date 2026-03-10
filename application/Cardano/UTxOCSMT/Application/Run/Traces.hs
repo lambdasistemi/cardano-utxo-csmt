@@ -24,7 +24,12 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     , renderArmageddonTrace
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( UpdateTrace (UpdateForwardTip)
+    ( UpdateTrace
+        ( UpdateCSMTMeasured
+        , UpdateFinalityMeasured
+        , UpdateRollbackMeasured
+        , UpdateTransactMeasured
+        )
     , renderUpdateTrace
     )
 import Cardano.UTxOCSMT.Application.Metrics
@@ -54,6 +59,7 @@ import Cardano.UTxOCSMT.Ouroboros.Connection
     ( NodeConnectionError (..)
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Point)
+import Data.Time.Clock (UTCTime)
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Data.Tracer.Throttle (Throttled (..))
 import Data.Tracer.Timestamp (Timestamped (..))
@@ -169,16 +175,21 @@ renderNodeConnectionError NodeConnectionTimeout =
 
 This function is used with the trace interceptor to forward relevant
 events to the metrics system without modifying the trace pipeline.
-Returns 'Just' for traces that should trigger metrics updates,
-'Nothing' otherwise.
+Returns a list of metrics events to emit (empty = no interception).
 -}
 stealMetricsEvent
     :: MainTraces
     -- ^ The trace to inspect
     -> Maybe MetricsEvent
-    -- ^ Corresponding metrics event, if any
-stealMetricsEvent (Update (UpdateForwardTip _ _ _ (Just merkleRoot))) =
-    Just $ MerkleRootEvent merkleRoot
+    -- ^ Corresponding metrics event
+stealMetricsEvent (Update (UpdateCSMTMeasured _ _ _ ns)) =
+    Just $ CSMTDurationEvent ns
+stealMetricsEvent (Update (UpdateRollbackMeasured _ _ _ _ ns)) =
+    Just $ RollbackDurationEvent ns
+stealMetricsEvent (Update (UpdateFinalityMeasured _ _ ns)) =
+    Just $ FinalityDurationEvent ns
+stealMetricsEvent (Update (UpdateTransactMeasured _ secs)) =
+    Just $ TransactionDurationEvent secs
 stealMetricsEvent (NotEmpty point) =
     Just $ BaseCheckpointEvent point
 stealMetricsEvent (Application (ApplicationRollingBack _)) =
@@ -210,14 +221,17 @@ matchHighFrequencyEvents = \case
     Mithril (ImportMithril (MithrilDownloadProgress _)) -> Just 1.0
     Mithril (ImportExtraction (ExtractionCounting _)) -> Just 1.0
     Mithril (ImportExtraction (ExtractionProgress _)) -> Just 1.0
-    Update (UpdateForwardTip{}) -> Just 1.0
+    Update (UpdateCSMTMeasured{}) -> Just 1.0
+    Update (UpdateRollbackMeasured{}) -> Just 1.0
+    Update (UpdateFinalityMeasured{}) -> Just 1.0
+    Update (UpdateTransactMeasured{}) -> Just 1.0
     _ -> Nothing
 
 {- | Render a throttled 'MainTraces' value to a log string.
 
 Includes timestamp and drop count information when events were throttled.
 -}
-renderThrottledMainTraces :: Throttled MainTraces -> String
+renderThrottledMainTraces :: Throttled UTCTime MainTraces -> String
 renderThrottledMainTraces Throttled{throttledEvent, throttledDropped} =
     let Timestamped{timestampedTime, timestampedEvent} = throttledEvent
         baseMsg = renderMainTraces timestampedEvent
@@ -225,7 +239,7 @@ renderThrottledMainTraces Throttled{throttledEvent, throttledDropped} =
             "["
                 ++ formatTime
                     defaultTimeLocale
-                    "%Y-%m-%d %H:%M:%S"
+                    "%Y-%m-%d %H:%M:%S%Q"
                     timestampedTime
                 ++ "] "
         droppedSuffix

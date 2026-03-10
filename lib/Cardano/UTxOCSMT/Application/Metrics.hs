@@ -40,16 +40,25 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
     , renderBlockPoint
     , renderPoint
     , _BaseCheckpointEvent
+    , _BlockDecodeDurationEvent
     , _BlockFetchEvent
     , _BlockInfoEvent
     , _BootstrapPhaseEvent
+    , _CSMTDurationEvent
     , _ChainTipEvent
     , _CountingProgressEvent
     , _DownloadProgressEvent
     , _ExtractionProgressEvent
     , _ExtractionTotalEvent
+    , _FinalityDurationEvent
     , _HeaderSyncProgressEvent
+    , _InternalCsmtOpsEvent
+    , _InternalQueryTipEvent
+    , _InternalRollbackStoreEvent
     , _MerkleRootEvent
+    , _RollbackDurationEvent
+    , _TotalBlockDurationEvent
+    , _TransactionDurationEvent
     , _UTxOChangeEvent
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Header, Point)
@@ -73,6 +82,7 @@ import Control.Lens
     ( APrism'
     , Lens'
     , aside
+    , clonePrism
     , lens
     , to
     , _Wrapped
@@ -82,23 +92,23 @@ import Control.Tracer (Tracer (..))
 import Data.Profunctor (Profunctor (..))
 import Data.SOP.Strict (index_NS)
 import Data.Time (UTCTime)
-import Data.Tracer.Timestamp (Timestamped (..), timestampTracer)
+import Data.Tracer.Timestamp (Timestamped (..), utcTimestampTracer)
 import Data.Word (Word64)
 import Ouroboros.Consensus.HardFork.Combinator (OneEraHeader (..))
 import Ouroboros.Consensus.HardFork.Combinator qualified as HF
 import Ouroboros.Network.Block (SlotNo (..))
 
 -- | Lens for accessing the event in a 'Timestamped' wrapper
-timestampedEventL :: Lens' (Timestamped a) a
+timestampedEventL :: Lens' (Timestamped t a) a
 timestampedEventL = lens timestampedEvent (\t e -> t{timestampedEvent = e})
 
 -- | Support to use event prisms with 'aside'
-timedAsTuple :: Timestamped a -> (UTCTime, a)
+timedAsTuple :: Timestamped UTCTime a -> (UTCTime, a)
 timedAsTuple (Timestamped t e) = (t, e)
 
 ---------- Metrics specific folds ----------
 
-type TimestampedMetrics = Timestamped MetricsEvent
+type TimestampedMetrics = Timestamped UTCTime MetricsEvent
 
 -- track the last block point seen
 lastBlockPointFold
@@ -122,7 +132,8 @@ maxBlockFetchQueueLength =
         Fold.maximum
 
 -- track speed of some event type
-speedOfSomeEvent :: Int -> APrism' a b -> Fold (Timestamped a) Double
+speedOfSomeEvent
+    :: Int -> APrism' a b -> Fold (Timestamped UTCTime a) Double
 speedOfSomeEvent window prism =
     lmap timedAsTuple
         $ handles (aside prism)
@@ -219,6 +230,43 @@ downloadProgressFold = handles (timestampedEventL . _DownloadProgressEvent) Fold
 countingProgressFold :: Fold TimestampedMetrics (Maybe Word64)
 countingProgressFold = handles (timestampedEventL . _CountingProgressEvent) Fold.last
 
+-- | Average duration in microseconds over a window.
+avgDurationFold
+    :: Int -> APrism' MetricsEvent Double -> Fold TimestampedMetrics Double
+avgDurationFold window prism =
+    handles
+        (timestampedEventL . clonePrism prism . to secsToMicros)
+        $ averageOverWindow window
+  where
+    secsToMicros :: Double -> Double
+    secsToMicros s = s * 1e6
+
+-- | Cumulative sum of durations in microseconds.
+cumulativeDurationFold
+    :: APrism' MetricsEvent Double -> Fold TimestampedMetrics Double
+cumulativeDurationFold prism =
+    handles
+        (timestampedEventL . clonePrism prism . to secsToMicros)
+        Fold.sum
+  where
+    secsToMicros :: Double -> Double
+    secsToMicros s = s * 1e6
+
+-- | Cumulative sum of durations already in microseconds.
+cumulativeUsFold
+    :: APrism' MetricsEvent Double
+    -> Fold TimestampedMetrics Double
+cumulativeUsFold prism =
+    handles
+        (timestampedEventL . clonePrism prism)
+        Fold.sum
+
+-- | Count events matching a prism.
+countEventFold
+    :: APrism' MetricsEvent a -> Fold TimestampedMetrics Int
+countEventFold prism =
+    handles (timestampedEventL . clonePrism prism) Fold.genericLength
+
 -- track the whole set of metrics
 metricsFold :: MetricsParams -> Fold TimestampedMetrics Metrics
 metricsFold MetricsParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
@@ -238,6 +286,22 @@ metricsFold MetricsParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
         <*> headerSyncProgressFold
         <*> downloadProgressFold
         <*> countingProgressFold
+        <*> avgDurationFold blockSpeedWindow _CSMTDurationEvent
+        <*> avgDurationFold blockSpeedWindow _RollbackDurationEvent
+        <*> avgDurationFold blockSpeedWindow _FinalityDurationEvent
+        <*> avgDurationFold blockSpeedWindow _BlockDecodeDurationEvent
+        <*> avgDurationFold blockSpeedWindow _TransactionDurationEvent
+        <*> avgDurationFold blockSpeedWindow _TotalBlockDurationEvent
+        <*> countEventFold _TotalBlockDurationEvent
+        <*> cumulativeDurationFold _BlockDecodeDurationEvent
+        <*> cumulativeDurationFold _TransactionDurationEvent
+        <*> cumulativeDurationFold _CSMTDurationEvent
+        <*> cumulativeDurationFold _RollbackDurationEvent
+        <*> cumulativeDurationFold _FinalityDurationEvent
+        <*> cumulativeDurationFold _TotalBlockDurationEvent
+        <*> cumulativeUsFold _InternalQueryTipEvent
+        <*> cumulativeUsFold _InternalCsmtOpsEvent
+        <*> cumulativeUsFold _InternalRollbackStoreEvent
 
 -- | Create a metrics tracer that collects metrics and outputs them
 metricsTracer :: MetricsParams -> IO (Tracer IO MetricsEvent)
@@ -261,6 +325,6 @@ metricsTracer params@MetricsParams{metricsFrequency, metricsOutput} = do
         threadDelay metricsFrequency
         readTVarIO metricsV >>= metricsOutput . extract
     pure
-        $ timestampTracer
+        $ utcTimestampTracer
         $ Tracer
         $ \msg -> atomically $ writeTQueue eventsQ msg

@@ -5,7 +5,7 @@ where
 
 import Control.Tracer (Tracer (..), traceWith)
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
-import Data.Time.Clock (UTCTime, addUTCTime)
+import Data.Time.Clock (UTCTime, addUTCTime, diffUTCTime)
 import Data.Tracer.Throttle (Throttled (..), throttleByFrequency)
 import Data.Tracer.Timestamp (Timestamped (..))
 import Test.Hspec (Spec, describe, it, shouldBe)
@@ -15,12 +15,16 @@ collectTracer :: IORef [a] -> Tracer IO a
 collectTracer ref = Tracer $ \a -> modifyIORef' ref (a :)
 
 -- | Helper to create a Timestamped with a specific time
-mkTimestamp :: UTCTime -> String -> Timestamped String
+mkTimestamp :: UTCTime -> String -> Timestamped UTCTime String
 mkTimestamp = Timestamped
 
 -- | Base time for tests
 baseTime :: UTCTime
 baseTime = read "2024-01-01 00:00:00 UTC"
+
+-- | Diff function for throttle tests
+diffSec :: UTCTime -> UTCTime -> Double
+diffSec t1 t2 = realToFrac (diffUTCTime t2 t1)
 
 -- | Add seconds to base time
 addSeconds :: Double -> UTCTime -> UTCTime
@@ -31,7 +35,7 @@ spec = do
     describe "throttleByFrequency" $ do
         it "passes through non-matching events immediately" $ do
             ref <- newIORef []
-            tracer <- throttleByFrequency [] (collectTracer ref)
+            tracer <- throttleByFrequency diffSec [] (collectTracer ref)
             traceWith tracer (mkTimestamp baseTime "event1")
             traceWith tracer (mkTimestamp baseTime "event2")
             results <- reverse <$> readIORef ref
@@ -41,7 +45,7 @@ spec = do
         it "emits first matching event immediately" $ do
             ref <- newIORef []
             let matcher _ = Just 1.0 -- 1 Hz = 1 event per second
-            tracer <- throttleByFrequency [matcher] (collectTracer ref)
+            tracer <- throttleByFrequency diffSec [matcher] (collectTracer ref)
             traceWith tracer (mkTimestamp baseTime "event1")
             results <- readIORef ref
             case results of
@@ -51,7 +55,7 @@ spec = do
         it "drops events within throttle interval" $ do
             ref <- newIORef []
             let matcher _ = Just 1.0 -- 1 Hz = 1 event per second
-            tracer <- throttleByFrequency [matcher] (collectTracer ref)
+            tracer <- throttleByFrequency diffSec [matcher] (collectTracer ref)
             traceWith tracer (mkTimestamp baseTime "event1")
             traceWith tracer (mkTimestamp (addSeconds 0.5 baseTime) "event2")
             traceWith tracer (mkTimestamp (addSeconds 0.9 baseTime) "event3")
@@ -60,7 +64,7 @@ spec = do
         it "reports dropped count when interval passes" $ do
             ref <- newIORef []
             let matcher _ = Just 1.0 -- 1 Hz
-            tracer <- throttleByFrequency [matcher] (collectTracer ref)
+            tracer <- throttleByFrequency diffSec [matcher] (collectTracer ref)
             traceWith tracer (mkTimestamp baseTime "event1")
             traceWith tracer (mkTimestamp (addSeconds 0.3 baseTime) "event2")
             traceWith tracer (mkTimestamp (addSeconds 0.6 baseTime) "event3")
@@ -78,7 +82,7 @@ spec = do
                 matcherB "B" = Just 2.0 -- 2 Hz = 0.5s interval
                 matcherB _ = Nothing
             tracer <-
-                throttleByFrequency [matcherA, matcherB] (collectTracer ref)
+                throttleByFrequency diffSec [matcherA, matcherB] (collectTracer ref)
             traceWith tracer (mkTimestamp baseTime "A")
             traceWith tracer (mkTimestamp baseTime "B")
             traceWith tracer (mkTimestamp (addSeconds 0.3 baseTime) "A")

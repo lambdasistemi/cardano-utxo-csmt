@@ -44,8 +44,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/contra-tracer-contrib
-  tag: 9c2555a5e6d72fdd55eb1e13cff812d72ea41913
-  --sha256: 03s9q9arz8km5hc08zsv7zxjzigy34rqf521p94xm2n4vmly2i7f
+  tag: 4f0c611e61b866905455a5d5469dea62afc55c3a
+  --sha256: 1k5c9kr1pw4c6qswssbjvma0ki7d31n3w275v6w9kkp23wwdh2g2
 
 source-repository-package
   type: git
@@ -55,3 +55,4 @@ source-repository-package
 
 -- Enable iohk flag for contra-tracer-contrib to use CHaP's simple API
 constraints: contra-tracer-contrib +iohk
+

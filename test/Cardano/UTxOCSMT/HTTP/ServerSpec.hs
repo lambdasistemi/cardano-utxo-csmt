@@ -33,7 +33,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , queryMerkleRoot
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( mkUpdate
+    ( allOps
+    , mkUpdate
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -311,6 +312,7 @@ withTestDB action =
             action runner
                 $ mkUpdate
                     nullTracer
+                    allOps
                     (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
@@ -341,6 +343,7 @@ withTestDBPrefixed action =
             action runner
                 $ mkUpdate
                     nullTracer
+                    allOps
                     (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
@@ -379,6 +382,22 @@ sampleMetrics =
         , headerSyncProgress = Nothing
         , downloadedBytes = Nothing
         , countingProgress = Nothing
+        , avgCSMTDuration = 0.0
+        , avgRollbackDuration = 0.0
+        , avgFinalityDuration = 0.0
+        , avgBlockDecodeDuration = 0.0
+        , avgTransactionDuration = 0.0
+        , avgTotalBlockDuration = 0.0
+        , cumulativeBlocks = 0
+        , cumulativeBlockDecodeDuration = 0.0
+        , cumulativeTransactionDuration = 0.0
+        , cumulativeCSMTDuration = 0.0
+        , cumulativeRollbackDuration = 0.0
+        , cumulativeFinalityDuration = 0.0
+        , cumulativeTotalBlockDuration = 0.0
+        , cumulativeInternalQueryTip = 0.0
+        , cumulativeInternalCsmtOps = 0.0
+        , cumulativeInternalRollbackStore = 0.0
         }
 
 -- | Sample ReadyResponse for synced state

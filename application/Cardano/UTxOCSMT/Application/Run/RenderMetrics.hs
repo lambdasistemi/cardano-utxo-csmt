@@ -36,6 +36,12 @@ renderMetrics
         , extractionProgress
         , downloadedBytes
         , countingProgress
+        , avgCSMTDuration
+        , avgRollbackDuration
+        , avgFinalityDuration
+        , avgBlockDecodeDuration
+        , avgTransactionDuration
+        , avgTotalBlockDuration
         } = do
         hClearScreen stdout
         hSetCursorPosition stdout 0 0
@@ -68,6 +74,24 @@ renderMetrics
                 ++ maybe "N/A" show currentMerkleRoot
                 ++ "\nCurrent Era: "
                 ++ fromMaybe "N/A" currentEra
+                ++ "\nAvg CSMT Duration: "
+                ++ printf "%.0f" avgCSMTDuration
+                ++ " μs"
+                ++ "\nAvg Rollback Duration: "
+                ++ printf "%.0f" avgRollbackDuration
+                ++ " μs"
+                ++ "\nAvg Finality Duration: "
+                ++ printf "%.0f" avgFinalityDuration
+                ++ " μs"
+                ++ "\nAvg Block Decode: "
+                ++ printf "%.0f" avgBlockDecodeDuration
+                ++ " μs"
+                ++ "\nAvg Transaction: "
+                ++ printf "%.0f" avgTransactionDuration
+                ++ " μs"
+                ++ "\nAvg Total Block: "
+                ++ printf "%.0f" avgTotalBlockDuration
+                ++ " μs"
 
 renderDownloadProgress :: Maybe Word64 -> String
 renderDownloadProgress Nothing = "N/A"
