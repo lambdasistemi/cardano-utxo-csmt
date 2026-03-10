@@ -24,6 +24,7 @@ let
       pkgs.just
       pkgs.nixfmt-classic
       pkgs.shellcheck
+      pkgs.zstd
       pkgs.mkdocs
       pkgs.marp-cli
       mkdocs.from-nixpkgs
