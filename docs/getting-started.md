@@ -46,7 +46,7 @@ Source: [Mithril Network Configurations](https://mithril.network/doc/manual/gett
 nix shell nixpkgs#cachix -c cachix use paolino
 
 # Run on preprod with Mithril bootstrap
-nix run github:paolino/cardano-utxo-csmt -- \
+nix run github:lambdasistemi/cardano-utxo-csmt -- \
   --network preprod \
   --mithril-bootstrap \
   --db-path /tmp/csmt-db \

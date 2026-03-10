@@ -50,4 +50,4 @@ cp -L "$tarball" "$releaseTarball"
 
 gh release upload "$release" "$releaseTarball"
 
-echo "Release URL: https://github.com/paolino/cardano-utxo-csmt/releases/tag/$release"
+echo "Release URL: https://github.com/lambdasistemi/cardano-utxo-csmt/releases/tag/$release"
