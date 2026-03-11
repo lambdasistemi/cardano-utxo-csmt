@@ -115,7 +115,7 @@ jobs:
           name: cardano-utxo-image
           path: output-docker-image
       - name: Cleanup stale containers
-        run: docker compose -f e2e/docker-compose.yml down -v --remove-orphans 2>/dev/null || true
+        run: docker compose -p e2e-n2c -f e2e/docker-compose.yml down -v --remove-orphans 2>/dev/null || true
       - name: Load and tag docker image
         run: |
           image_file=$(find output-docker-image -type f | head -1)
@@ -125,13 +125,13 @@ jobs:
           docker images
       - name: Run E2E test
         run: |
-          docker compose -f e2e/docker-compose.yml up \
+          docker compose -p e2e-n2c -f e2e/docker-compose.yml up \
             --force-recreate \
             --abort-on-container-exit \
             --exit-code-from e2e-test
       - name: Cleanup
         if: always()
-        run: docker compose -f e2e/docker-compose.yml down -v
+        run: docker compose -p e2e-n2c -f e2e/docker-compose.yml down -v
   e2e-n2n:
     name: N2N E2E test
     needs: build
@@ -146,7 +146,7 @@ jobs:
           name: cardano-utxo-image
           path: output-docker-image
       - name: Cleanup stale containers
-        run: docker compose -f e2e/docker-compose.n2n.yml down -v --remove-orphans 2>/dev/null || true
+        run: docker compose -p e2e-n2n -f e2e/docker-compose.n2n.yml down -v --remove-orphans 2>/dev/null || true
       - name: Load and tag docker image
         run: |
           image_file=$(find output-docker-image -type f | head -1)
@@ -156,13 +156,13 @@ jobs:
           docker images
       - name: Run N2N E2E test
         run: |
-          docker compose -f e2e/docker-compose.n2n.yml up \
+          docker compose -p e2e-n2n -f e2e/docker-compose.n2n.yml up \
             --force-recreate \
             --abort-on-container-exit \
             --exit-code-from e2e-test
       - name: Cleanup
         if: always()
-        run: docker compose -f e2e/docker-compose.n2n.yml down -v
+        run: docker compose -p e2e-n2n -f e2e/docker-compose.n2n.yml down -v
   swagger:
     # check that the swagger file is up to date
     name: Check Swagger documentation
