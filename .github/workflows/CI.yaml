@@ -76,6 +76,8 @@ jobs:
     name: Check code formatting
     runs-on: nixos
     steps:
+      - name: Clean workspace
+        run: rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
       - uses: cachix/cachix-action@v15
         with:
@@ -112,6 +114,8 @@ jobs:
         with:
           name: cardano-utxo-image
           path: output-docker-image
+      - name: Cleanup stale containers
+        run: docker compose -f e2e/docker-compose.yml down -v --remove-orphans 2>/dev/null || true
       - name: Load and tag docker image
         run: |
           image_file=$(find output-docker-image -type f | head -1)
@@ -122,6 +126,7 @@ jobs:
       - name: Run E2E test
         run: |
           docker compose -f e2e/docker-compose.yml up \
+            --force-recreate \
             --abort-on-container-exit \
             --exit-code-from e2e-test
       - name: Cleanup
@@ -140,6 +145,8 @@ jobs:
         with:
           name: cardano-utxo-image
           path: output-docker-image
+      - name: Cleanup stale containers
+        run: docker compose -f e2e/docker-compose.n2n.yml down -v --remove-orphans 2>/dev/null || true
       - name: Load and tag docker image
         run: |
           image_file=$(find output-docker-image -type f | head -1)
@@ -150,6 +157,7 @@ jobs:
       - name: Run N2N E2E test
         run: |
           docker compose -f e2e/docker-compose.n2n.yml up \
+            --force-recreate \
             --abort-on-container-exit \
             --exit-code-from e2e-test
       - name: Cleanup
