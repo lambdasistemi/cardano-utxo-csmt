@@ -13,9 +13,9 @@ jobs:
     name: Build
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -56,9 +56,9 @@ jobs:
     name: Run unit Tests
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -69,9 +69,9 @@ jobs:
     name: Run Benchmarks
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -82,9 +82,9 @@ jobs:
     name: Check code formatting
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -100,9 +100,9 @@ jobs:
     name: HLint
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -116,9 +116,9 @@ jobs:
     env:
       PATH: /run/current-system/sw/bin:/usr/bin:/bin
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - name: Download docker image
         uses: actions/download-artifact@v4
         with:
@@ -149,9 +149,9 @@ jobs:
     env:
       PATH: /run/current-system/sw/bin:/usr/bin:/bin
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - name: Download docker image
         uses: actions/download-artifact@v4
         with:
@@ -180,9 +180,9 @@ jobs:
     name: Check Swagger documentation
     runs-on: nixos
     steps:
-      - name: Clean workspace
-        run: sudo rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.* 2>/dev/null || true
       - uses: actions/checkout@v4
+        with:
+          clean: false
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
