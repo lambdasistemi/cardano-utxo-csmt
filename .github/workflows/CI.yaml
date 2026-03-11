@@ -102,7 +102,7 @@ jobs:
   e2e:
     name: N2C E2E test
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
       - name: Download docker image
@@ -128,7 +128,7 @@ jobs:
   e2e-n2n:
     name: N2N E2E test
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: nixos
     steps:
       - uses: actions/checkout@v4
       - name: Download docker image
