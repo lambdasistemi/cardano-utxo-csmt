@@ -251,6 +251,7 @@ spec = describe "Application.Options" $ do
                     "network: Preview\n\
                     \node-name: test.example.com\n\
                     \node-port: 3001\n\
+                    \genesis-file: /tmp/genesis.json\n\
                     \mithril: {}\n"
             opts <-
                 expectSuccess
@@ -265,6 +266,7 @@ spec = describe "Application.Options" $ do
                 parseYamlObject
                     "node-name: custom-node.example.com\n\
                     \node-port: 9999\n\
+                    \genesis-file: /tmp/genesis.json\n\
                     \mithril: {}\n"
             opts <-
                 expectSuccess
@@ -284,6 +286,7 @@ spec = describe "Application.Options" $ do
                     "network: Preprod\n\
                     \node-name: test.example.com\n\
                     \node-port: 3001\n\
+                    \genesis-file: /tmp/genesis.json\n\
                     \mithril:\n\
                     \  mithril-aggregator-endpoint: https://config.example.com\n"
             opts <-
@@ -301,6 +304,7 @@ spec = describe "Application.Options" $ do
                     "network: Preview\n\
                     \node-name: test.example.com\n\
                     \node-port: 3001\n\
+                    \genesis-file: /tmp/genesis.json\n\
                     \mithril:\n\
                     \  mithril-aggregator-endpoint: https://config.example.com\n"
             opts <-
@@ -322,6 +326,7 @@ spec = describe "Application.Options" $ do
                     "network: Preview\n\
                     \node-name: test.example.com\n\
                     \node-port: 3001\n\
+                    \genesis-file: /tmp/genesis.json\n\
                     \mithril:\n\
                     \  mithril-aggregator-endpoint: https://config.example.com\n"
             let env =
@@ -362,6 +367,7 @@ defaultTestConfig =
     KeyMap.fromList
         [ ("node-name", String "test-node.example.com")
         , ("node-port", Number 3001)
+        , ("genesis-file", String "/tmp/genesis.json")
         , ("mithril", Object mempty)
         ]
 

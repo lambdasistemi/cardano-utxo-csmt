@@ -115,7 +115,7 @@ spec = describe "Genesis chain sync" $ do
                                         setupDB
                                             nullTracer
                                             originPoint
-                                            (Just shelleyGenesisPath)
+                                            shelleyGenesisPath
                                             Nothing
                                             disabledMithril
                                             devnetMagic

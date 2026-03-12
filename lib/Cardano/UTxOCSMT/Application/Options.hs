@@ -142,8 +142,8 @@ data Options = Options
     -- ^ Number of slots behind chain tip to consider synced (default: 100)
     , skipNodeValidation :: Bool
     -- ^ Skip node connection validation before Mithril bootstrap
-    , genesisFile :: Maybe FilePath
-    -- ^ Path to shelley-genesis.json for bootstrap from genesis
+    , genesisFile :: FilePath
+    -- ^ Path to shelley-genesis.json (required for security parameter)
     , byronGenesisFile :: Maybe FilePath
     -- ^ Path to byron-genesis.json for bootstrap from genesis
     }
@@ -357,20 +357,19 @@ skipNodeValidationSwitch =
         , switch True
         ]
 
-genesisFileOption :: Parser (Maybe FilePath)
+genesisFileOption :: Parser FilePath
 genesisFileOption =
-    optional
-        $ setting
-            [ long "genesis-file"
-            , conf "genesis-file"
-            , help
-                "Path to shelley-genesis.json for bootstrapping \
-                \from genesis. Inserts initialFunds into the CSMT \
-                \before chain sync starts from Origin."
-            , metavar "FILE"
-            , reader str
-            , option
-            ]
+    setting
+        [ long "genesis-file"
+        , conf "genesis-file"
+        , help
+            "Path to shelley-genesis.json. Required for \
+            \reading the security parameter (k) and \
+            \optionally bootstrapping from genesis."
+        , metavar "FILE"
+        , reader str
+        , option
+        ]
 
 byronGenesisFileOption :: Parser (Maybe FilePath)
 byronGenesisFileOption =
