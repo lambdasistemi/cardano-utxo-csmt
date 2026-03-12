@@ -142,6 +142,7 @@ withFreshDB action =
                         testSlotHash
                         (\_ _ -> pure ())
                         testArmageddonParams
+                        maxBound
                 action update
 
 spec :: Spec
@@ -399,6 +400,7 @@ spec = describe "E2E newRocksDBState" $ do
                             testSlotHash
                             (\_ _ -> pure ())
                             testArmageddonParams
+                            maxBound
                     -- Fresh DB should have no rollback slots
                     -- (Origin is in RollbackPoints but it's not a slot)
                     rollbackPoints `shouldBe` []

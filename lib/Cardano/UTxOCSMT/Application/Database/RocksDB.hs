@@ -112,6 +112,8 @@ newRocksDBState
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward; use to check if at tip and emit Synced
     -> ArmageddonParams hash
+    -> Int
+    -- ^ Security parameter k (max rollback depth)
     -> m
         ( (Update m slot key value, [slot])
         , RunTransaction ColumnFamily BatchOp slot hash key value m
@@ -124,7 +126,8 @@ newRocksDBState
     ops
     slotHash
     onForward
-    armageddonParams = do
+    armageddonParams
+    securityParam = do
         runner <- newRunRocksDBTransaction db prisms
         _ <- ensureInitialized runner armageddonParams
         (,runner)
@@ -136,6 +139,7 @@ newRocksDBState
                 onForward
                 armageddonParams
                 runner
+                securityParam
 
 -- | Create Update state from an existing runner
 createUpdateState
@@ -157,6 +161,8 @@ createUpdateState
     -- ^ Called after each forward; use to check if at tip and emit Synced
     -> ArmageddonParams hash
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
+    -> Int
+    -- ^ Security parameter k (max rollback depth)
     -> m (Update m slot key value, [slot])
 createUpdateState
     tracer
@@ -165,7 +171,8 @@ createUpdateState
     slotHash
     onForward
     armageddonParams
-    runner = do
+    runner
+    securityParam = do
         _ <- ensureInitialized runner armageddonParams
         newState
             tracer
@@ -175,6 +182,7 @@ createUpdateState
             onForward
             armageddonParams
             runner
+            securityParam
 
 {- | Create split-mode Update state from an existing runner.
 
@@ -210,6 +218,8 @@ createSplitUpdateState
     -> (slot -> TipOf slot -> m ())
     -> ArmageddonParams hash
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
+    -> Int
+    -- ^ Security parameter k (max rollback depth)
     -> m (Update m slot key value, [slot])
 createSplitUpdateState
     tracer
@@ -222,7 +232,8 @@ createSplitUpdateState
     slotHash
     onForward
     armageddonParams
-    runner = do
+    runner
+    securityParam = do
         _ <- ensureInitialized runner armageddonParams
         newSplitState
             tracer
@@ -236,6 +247,7 @@ createSplitUpdateState
             onForward
             armageddonParams
             runner
+            securityParam
 
 {- | Ensure the database has been initialized with an Origin rollback point.
 This makes the public API self-initializing so callers can't forget to

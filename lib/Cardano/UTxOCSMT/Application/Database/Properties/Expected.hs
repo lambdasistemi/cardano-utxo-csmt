@@ -31,9 +31,11 @@ module Cardano.UTxOCSMT.Application.Database.Properties.Expected
     , getFinality
     , emptyExpected
     , rollbackTip
-    , forwardFinality
     , expectedAllOpposites
+    , expectedFinality
+    , expectedRollbackDepth
     , runWithExpected
+    , asksSecurityParam
     )
 where
 
@@ -83,13 +85,13 @@ data Generator slot key value = Generator
 data Context m slot key value = Context
     { contextDatabase :: Query m slot key value
     , contextGenerator :: Generator slot key value
+    , contextSecurityParam :: Int
     }
 
 -- | Expected state of the database
 data Expected slot key value = Expected
     { expectedAssocs :: [(key, value)]
     , expectedTip :: WithOrigin slot
-    , expectedFinality :: WithOrigin slot
     , expectedOpposites :: [(slot, [Operation key value])]
     }
     deriving (Show, Eq)
@@ -99,9 +101,26 @@ emptyExpected =
     Expected
         { expectedAssocs = []
         , expectedTip = Origin
-        , expectedFinality = Origin
         , expectedOpposites = []
         }
+
+{- | Derive expected finality from the rollback window.
+The DB always starts with an Origin rollback point.
+Finality is Origin until we have more than k opposites
+(meaning Origin has been pruned away).
+-}
+expectedFinality
+    :: Int -> Expected slot key value -> WithOrigin slot
+expectedFinality k Expected{expectedOpposites}
+    | length expectedOpposites < k = Origin
+    | otherwise =
+        case expectedOpposites of
+            [] -> Origin
+            ops -> At . fst $ last ops
+
+-- | Number of rollback points currently stored
+expectedRollbackDepth :: Expected slot key value -> Int
+expectedRollbackDepth = length . expectedOpposites
 
 -- | Monad transformer stack for properties with expected state
 type WithExpected m slot key value =
@@ -125,8 +144,19 @@ runWithExpected context box prop =
 -- | Access the generator from the context
 asksGenerator
     :: PropertyConstraints m slot key value
-    => PropertyWithExpected m slot key value (Generator slot key value)
+    => PropertyWithExpected
+        m
+        slot
+        key
+        value
+        (Generator slot key value)
 asksGenerator = lift $ asks contextGenerator
+
+-- | Access the security parameter from the context
+asksSecurityParam
+    :: PropertyConstraints m slot key value
+    => PropertyWithExpected m slot key value Int
+asksSecurityParam = lift $ asks contextSecurityParam
 
 -- | Property monad with expected state
 type PropertyWithExpected m slot key value =
@@ -216,20 +246,37 @@ opposite expct (Delete k) =
 
 expectedForward
     :: (Eq key, Ord slot, HasCallStack)
-    => Expected slot key value
+    => Int
+    -> Expected slot key value
     -> slot
     -> [Operation key value]
     -> Expected slot key value
-expectedForward old@Expected{expectedTip} slot ops
+expectedForward securityParam old@Expected{expectedTip} slot ops
     | At slot <= expectedTip = old
-    | otherwise = foldl' apply old{expectedTip = At slot} ops
+    | otherwise =
+        pruneByCount securityParam
+            $ foldl' apply old{expectedTip = At slot} ops
   where
     apply ex op =
         ex
-            { expectedAssocs = applyOperation (expectedAssocs ex) op
+            { expectedAssocs =
+                applyOperation (expectedAssocs ex) op
             , expectedOpposites =
-                applyOpposite (expectedOpposites ex) slot (opposite ex op)
+                applyOpposite
+                    (expectedOpposites ex)
+                    slot
+                    (opposite ex op)
             }
+
+-- | Drop oldest rollback points when count exceeds k
+pruneByCount
+    :: Int
+    -> Expected slot key value
+    -> Expected slot key value
+pruneByCount k ex@Expected{expectedOpposites}
+    | length expectedOpposites <= k = ex
+    | otherwise =
+        ex{expectedOpposites = take k expectedOpposites}
 
 -- | Proxy to database 'forward' that also updates expected state
 forwardTip
@@ -241,45 +288,55 @@ forwardTip
     => slot
     -> [Operation key value]
     -> PropertyWithExpected m slot key value ()
-forwardTip slot ops = lift . lift $ do
-    (ex, databaseState) <- get
-    case databaseState of
-        Syncing update -> do
-            -- Use slot as chain tip for testing (always "at tip")
-            cont <- lift $ forwardTipApply update slot slot ops
-            put (expectedForward ex slot ops, Syncing cont)
-        Intersecting _ _ ->
-            error "forwardTip: cannot forward while intersecting"
-        Truncating _ ->
-            error "forwardTip: cannot forward while resetting"
+forwardTip slot ops = do
+    k <- asksSecurityParam
+    lift . lift $ do
+        (ex, databaseState) <- get
+        case databaseState of
+            Syncing update -> do
+                cont <-
+                    lift $ forwardTipApply update slot slot ops
+                put
+                    ( expectedForward k ex slot ops
+                    , Syncing cont
+                    )
+            Intersecting _ _ ->
+                error
+                    "forwardTip: cannot forward while intersecting"
+            Truncating _ ->
+                error
+                    "forwardTip: cannot forward while resetting"
 
 expectedRollback
     :: (Eq key, Ord slot)
-    => Expected slot key value
+    => Int
+    -> Expected slot key value
     -> WithOrigin slot
     -> Expected slot key value
 expectedRollback
+    k
     old@Expected
         { expectedAssocs = assocs
         , expectedOpposites = opposites
-        , expectedFinality = expectedFinality
         , expectedTip
         }
     (At slot)
         | At slot >= expectedTip = old
-        | At slot < expectedTip && At slot >= expectedFinality =
+        | At slot < expectedTip
+            && At slot >= expectedFinality k old =
             let
-                (ops, newOpposites) = break (\(slt, _) -> slt <= slot) opposites
-                newAssocs = applyOperations assocs $ ops >>= snd
+                (ops, newOpposites) =
+                    break (\(slt, _) -> slt <= slot) opposites
+                newAssocs =
+                    applyOperations assocs $ ops >>= snd
             in
                 Expected
                     { expectedAssocs = newAssocs
                     , expectedTip = At slot
-                    , expectedFinality
                     , expectedOpposites = newOpposites
                     }
         | otherwise = emptyExpected
-expectedRollback _ Origin =
+expectedRollback _ _ Origin =
     emptyExpected
 
 -- | Proxy to database 'rollback' that also updates expected state
@@ -288,55 +345,19 @@ rollbackTip
      . PropertyConstraints m slot key value
     => WithOrigin slot
     -> PropertyWithExpected m slot key value ()
-rollbackTip newTip = lift . lift $ do
-    (ex, databaseState) <- get
-    case databaseState of
-        Syncing update -> do
-            cont <- lift $ rollbackTipApply update newTip
-            case cont of
-                s@(Syncing{}) -> do
-                    put (expectedRollback ex newTip, s)
-                s -> put (ex, s)
-        Intersecting _ _ -> do
-            error "rollbackTip: cannot rollback to a point not in reset points"
-        Truncating _ -> do
-            error "rollbackTip: cannot rollback while resetting"
+rollbackTip newTip = do
+    k <- asksSecurityParam
+    lift . lift $ do
+        (ex, databaseState) <- get
+        case databaseState of
+            Syncing update -> do
+                cont <- lift $ rollbackTipApply update newTip
+                case cont of
+                    s@(Syncing{}) -> do
+                        put (expectedRollback k ex newTip, s)
+                    s -> put (ex, s)
+            Intersecting _ _ -> do
+                error "rollbackTip: cannot rollback to a point not in reset points"
+            Truncating _ -> do
+                error "rollbackTip: cannot rollback while resetting"
 
-expectedProgressFinality
-    :: Ord slot
-    => Expected slot key value
-    -> slot
-    -> Expected slot key value
-expectedProgressFinality
-    old@Expected{expectedFinality, expectedTip, expectedOpposites}
-    slot
-        | At slot <= expectedFinality = old
-        | otherwise =
-            let
-                slot' = min (At slot) expectedTip
-            in
-                old
-                    { expectedFinality = slot'
-                    , expectedOpposites =
-                        takeWhile (\(slt, _) -> At slt > slot') expectedOpposites
-                    }
-
--- | Proxy to database 'progressFinality' that also updates expected state
-forwardFinality
-    :: forall m slot key value
-     . PropertyConstraints m slot key value
-    => slot
-    -> PropertyWithExpected m slot key value ()
-forwardFinality slot = lift . lift $ do
-    (ex, databaseState) <- get
-    case databaseState of
-        Syncing update -> do
-            cont <- lift $ forwardFinalityApply update slot
-            put
-                ( expectedProgressFinality ex slot
-                , Syncing cont
-                )
-        Intersecting _ _reset ->
-            error "forwardFinality: cannot progress finality while resetting"
-        Truncating _ ->
-            error "forwardFinality: cannot progress finality while resetting"
