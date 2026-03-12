@@ -247,6 +247,7 @@ main = withUtf8 $ do
                     onForward
                     armageddonParams
                     runner
+                    maxBound
 
             -- Check if we should exit after bootstrap
             when (Mithril.mithrilBootstrapOnly mithrilOptions) $ do

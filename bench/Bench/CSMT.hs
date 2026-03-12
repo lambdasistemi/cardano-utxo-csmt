@@ -584,6 +584,7 @@ runStressBench nBlocks utxos =
                         (\_ _ -> pure ())
                         benchArmageddonParams
                         runner
+                        maxBound
                 let nOps = length utxos
                     -- Generate fixed-size 34-byte keys (like real UTxO refs:
                     -- 32-byte tx hash + 2-byte index). We encode block+index

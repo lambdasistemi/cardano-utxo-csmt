@@ -74,6 +74,7 @@ import Database.KV.Cursor
     )
 import Database.KV.Transaction
     ( Transaction
+    , delete
     , iterating
     , query
     )
@@ -298,6 +299,8 @@ newState
     -- ^ Called after each forward; use to check if at tip and emit Synced
     -> ArmageddonParams hash
     -> RunTransaction cf op slot hash key value m
+    -> Int
+    -- ^ Security parameter k (max rollback depth)
     -> m (Update m slot key value, [slot])
 newState
     TraceWith{tracer, trace}
@@ -306,7 +309,8 @@ newState
     slotHash
     onForward
     armageddonParams
-    runTransaction@RunTransaction{transact} = do
+    runTransaction@RunTransaction{transact}
+    securityParam = do
         (cps, rollbackCount) <-
             transact $ do
                 cps <-
@@ -326,6 +330,7 @@ newState
                     onForward
                     armageddonParams
                     runTransaction
+                    securityParam
                     rollbackCount
         pure (update, cps)
 
@@ -366,6 +371,8 @@ newSplitState
     -> (slot -> TipOf slot -> m ())
     -> ArmageddonParams hash
     -> RunTransaction cf op slot hash key value m
+    -> Int
+    -- ^ Security parameter k (max rollback depth)
     -> m (Update m slot key value, [slot])
 newSplitState
     tw@TraceWith{tracer, trace}
@@ -378,7 +385,8 @@ newSplitState
     slotHash
     onForward
     armageddonParams
-    runTransaction@RunTransaction{transact} = do
+    runTransaction@RunTransaction{transact}
+    securityParam = do
         (cps, rollbackCount, empty) <-
             transact $ do
                 cps <-
@@ -401,6 +409,7 @@ newSplitState
                             onForward
                             armageddonParams
                             runTransaction
+                            securityParam
                             rollbackCount
                     else
                         mkSplitUpdate
@@ -414,6 +423,7 @@ newSplitState
                             onForward
                             armageddonParams
                             runTransaction
+                            securityParam
                             rollbackCount
         pure (update, cps)
 
@@ -530,6 +540,32 @@ updateRollbackPoint rootHashQuery pointHash pointSlot inverseOps = do
         $ UTxORollbackPoint pointHash inverseOps merkleRoot
     pure merkleRoot
 
+{- | Prune oldest rollback points when count exceeds
+the security parameter k. Returns number pruned.
+-}
+pruneExcess
+    :: (Ord slot, Monad m)
+    => Int
+    -> Int
+    -> RunTransaction cf op slot hash key value m
+    -> m Int
+pruneExcess securityParam currentCount RunTransaction{transact}
+    | excess <= 0 = pure 0
+    | otherwise =
+        transact
+            $ iterating RollbackPoints
+            $ do
+                me <- firstEntry
+                go excess me
+  where
+    excess = currentCount - securityParam
+    go 0 _ = pure 0
+    go _ Nothing = pure 0
+    go n (Just Entry{entryKey}) = do
+        lift $ delete RollbackPoints entryKey
+        next <- nextEntry
+        (+ 1) <$> go (n - 1) next
+
 sampleRollbackPoints
     :: Monad m
     => Cursor
@@ -588,6 +624,8 @@ mkUpdate
     -> RunTransaction cf op slot hash key value m
     -- ^ Function to run a transaction
     -> Int
+    -- ^ Security parameter k (max rollback depth)
+    -> Int
     -- ^ Initial rollback point count
     -> Update m slot key value
 mkUpdate
@@ -597,10 +635,11 @@ mkUpdate
     slotHash
     onForward
     armageddonParams
-    runTransaction@RunTransaction{transact} =
-        go (0 :: Int)
+    runTransaction@RunTransaction{transact}
+    securityParam =
+        go
       where
-        go sinceLastPrune count =
+        go count =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
@@ -617,14 +656,16 @@ mkUpdate
                                     operations
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
-                        pure
-                            $ if stored
-                                then
-                                    go
-                                        (sinceLastPrune + 1)
-                                        (count + 1)
-                                else
-                                    go sinceLastPrune count
+                        if stored
+                            then do
+                                let newCount = count + 1
+                                pruned <-
+                                    pruneExcess
+                                        securityParam
+                                        newCount
+                                        runTransaction
+                                pure $ go (newCount - pruned)
+                            else pure $ go count
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -646,17 +687,15 @@ mkUpdate
                             Store.RollbackSucceeded deleted ->
                                 pure
                                     $ Syncing
-                                    $ go
-                                        0
-                                        (count - deleted)
+                                    $ go (count - deleted)
                             Store.RollbackImpossible -> do
                                 armageddonCall
                                 pure
                                     $ Truncating
-                                    $ go 0 0
+                                    $ go 0
                     Origin -> do
                         armageddonCall
-                        pure $ Syncing $ go 0 0
+                        pure $ Syncing $ go 0
                 , forwardFinalityApply = \s -> do
                     trace $ UpdateFinalityBegin s
                     pruned <-
@@ -665,8 +704,7 @@ mkUpdate
                                 RollbackPoints
                                 (At s)
                     trace $ UpdateFinalityDone s pruned
-                    pure
-                        $ go 0 (count - pruned)
+                    pure $ go (count - pruned)
                 }
         armageddonCall =
             armageddon
@@ -710,6 +748,8 @@ mkSplitUpdate
     -> ArmageddonParams hash
     -> RunTransaction cf op slot hash key value m
     -> Int
+    -- ^ Security parameter k (max rollback depth)
+    -> Int
     -- ^ Initial rollback point count
     -> Update m slot key value
 mkSplitUpdate
@@ -722,10 +762,11 @@ mkSplitUpdate
     slotHash
     onForward
     armageddonParams
-    runTransaction@RunTransaction{transact} =
-        goKVOnly (0 :: Int)
+    runTransaction@RunTransaction{transact}
+    securityParam =
+        goKVOnly
       where
-        goKVOnly sinceLastPrune count =
+        goKVOnly count =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
@@ -742,27 +783,25 @@ mkSplitUpdate
                                     operations
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
-                        let (sinceLastPrune', count') =
-                                if stored
-                                    then
-                                        ( sinceLastPrune + 1
-                                        , count + 1
-                                        )
-                                    else
-                                        ( sinceLastPrune
-                                        , count
-                                        )
+                        count' <-
+                            if stored
+                                then do
+                                    let newCount = count + 1
+                                    pruned <-
+                                        pruneExcess
+                                            securityParam
+                                            newCount
+                                            runTransaction
+                                    pure (newCount - pruned)
+                                else pure count
                         if isAtTip slot chainTip
                             then do
                                 trace UpdateJournalReplay
                                 replay
-                                pure
-                                    $ goFull count'
+                                pure $ goFull count'
                             else
                                 pure
-                                    $ goKVOnly
-                                        sinceLastPrune'
-                                        count'
+                                    $ goKVOnly count'
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -785,18 +824,17 @@ mkSplitUpdate
                                 pure
                                     $ Syncing
                                     $ goKVOnly
-                                        0
                                         (count - deleted)
                             Store.RollbackImpossible -> do
                                 armageddonCall
                                 pure
                                     $ Truncating
-                                    $ goKVOnly 0 0
+                                    $ goKVOnly 0
                     Origin -> do
                         armageddonCall
                         pure
                             $ Syncing
-                            $ goKVOnly 0 0
+                            $ goKVOnly 0
                 , forwardFinalityApply = \s -> do
                     trace $ UpdateFinalityBegin s
                     pruned <-
@@ -805,10 +843,7 @@ mkSplitUpdate
                                 RollbackPoints
                                 (At s)
                     trace $ UpdateFinalityDone s pruned
-                    pure
-                        $ goKVOnly
-                            0
-                            (count - pruned)
+                    pure $ goKVOnly (count - pruned)
                 }
         goFull =
             mkUpdate
@@ -819,6 +854,7 @@ mkSplitUpdate
                 onForward
                 armageddonParams
                 runTransaction
+                securityParam
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)

@@ -49,12 +49,13 @@ import Cardano.UTxOCSMT.Application.Database.Properties
     ( findValue
     , logOnFailure
     , populateWithSomeContent
+    , propertyBlocksDeeperThanKArePruned
+    , propertyBlocksWithinKAreRollbackable
+    , propertyFinalityEqualsOldestRollbackPoint
     , propertyForwardAfterTipAppliesChanges
     , propertyForwardBeforeTipIsNoOp
-    , propertyForwardFinalityAfterFinalityReduceTheRollbackWindow
     , propertyRollbackAfterBeforeTipUndoesChanges
     , propertyRollbackAfterTipDoesNothing
-    , propertyRollbackBeforeFinalityTruncatesTheDatabase
     , propertyTipIsAfterFinalityOrMissing
     )
 import Cardano.UTxOCSMT.Application.Database.Properties.Expected
@@ -208,11 +209,17 @@ runRocksDBProperties prop =
                                     GenValue v <- arbitrary
                                     pure v
                                 }
+                        , contextSecurityParam =
+                            testSecurityParam
                         }
-            runWithExpected ctx (update runner) prop
+            runWithExpected
+                ctx
+                (update runner)
+                prop
   where
     CSMTContext{fromKV = fkv, hashing = h} = csmtContext
     armageddonParams = ArmageddonParams 1000 (mkHash "")
+    testSecurityParam = 5
     query db =
         mkTransactionedQuery (isoK fkv)
             <$> newRunRocksDBTransaction db prisms
@@ -225,7 +232,8 @@ runRocksDBProperties prop =
             (\_ _ -> pure ())
             armageddonParams
             runner
-            0
+            testSecurityParam
+            1 -- Origin rollback point from setup
 
 test
     :: PropertyWithExpected
@@ -300,15 +308,17 @@ spec = do
             logOnFailure $ "Generated dumps: " ++ show ds
             let past = (Origin, d0) :| ds
             propertyRollbackAfterBeforeTipUndoesChanges past
-        it "will truncate when rolling back before finality" $ test $ do
+        it "prunes blocks deeper than k" $ test $ do
             _ <- populateWithSomeContent
-            propertyRollbackBeforeFinalityTruncatesTheDatabase
-        it "will forward finality" $ test $ do
+            propertyBlocksDeeperThanKArePruned
+        it "keeps blocks within k rollbackable" $ test $ do
             d0 <- getDump
             ds <- populateWithSomeContent
-            logOnFailure $ "Generated dumps: " ++ show ds
             let past = (Origin, d0) :| ds
-            propertyForwardFinalityAfterFinalityReduceTheRollbackWindow past
+            propertyBlocksWithinKAreRollbackable past
+        it "finality equals oldest rollback point" $ test $ do
+            _ <- populateWithSomeContent
+            propertyFinalityEqualsOldestRollbackPoint
     describe "ConfigCol operations" $ do
         it "stores and retrieves base checkpoint" $ do
             withSystemTempDirectory "rocksdb-config-test" $ \dir ->

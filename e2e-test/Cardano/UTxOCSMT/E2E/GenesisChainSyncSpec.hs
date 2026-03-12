@@ -134,6 +134,7 @@ spec = describe "Genesis chain sync" $ do
                                             (\_ _ -> pure ())
                                             armageddonParams
                                             runner
+                                            maxBound
                                     result <-
                                         timeout
                                             15_000_000

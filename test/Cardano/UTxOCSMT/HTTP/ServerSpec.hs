@@ -318,6 +318,7 @@ withTestDB action =
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
+                    maxBound
                     0
 
 -- | Run tests with a fresh RocksDB database using address-prefixed CSMT
@@ -349,6 +350,7 @@ withTestDBPrefixed action =
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
+                    maxBound
                     0
 
 -- | Open RocksDB with test column families

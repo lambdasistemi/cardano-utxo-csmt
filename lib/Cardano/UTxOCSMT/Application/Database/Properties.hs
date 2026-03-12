@@ -6,11 +6,10 @@ module Cardano.UTxOCSMT.Application.Database.Properties
     , propertyForwardAfterTipAppliesChanges
     , propertyRollbackAfterTipDoesNothing
     , propertyRollbackAfterBeforeTipUndoesChanges
-    , propertyForwardFinalityBeforeFinalityIsNoOp
+    , propertyBlocksWithinKAreRollbackable
+    , propertyBlocksDeeperThanKArePruned
+    , propertyFinalityEqualsOldestRollbackPoint
     , populateWithSomeContent
-    , propertyForwardFinalityAfterFinalityReduceTheRollbackWindow
-    , propertyForwardFinalityBeyondTipSetsFinalityAsTip
-    , propertyRollbackBeforeFinalityTruncatesTheDatabase
     , findValue
     , logOnFailure
     , assertingJust
@@ -28,8 +27,10 @@ import Cardano.UTxOCSMT.Application.Database.Properties.Expected
     , PropertyConstraints
     , PropertyWithExpected
     , asksGenerator
+    , asksSecurityParam
+    , expectedFinality
     , expectedKeys
-    , forwardFinality
+    , expectedRollbackDepth
     , forwardTip
     , getDump
     , getFinality
@@ -161,26 +162,13 @@ populateWithSomeContent
         [(WithOrigin slot, Dump slot key value)]
 populateWithSomeContent = do
     NonNegative n <- pick arbitrary
-    oldFinality <- getFinality
-    past <- replicateM n $ do
+    replicateM n $ do
         tip <- getTip
         slot <- genSlotAfter tip
         ops <- generateOperations
         forwardTip slot ops
         dump <- getDump
         pure (At slot, dump)
-    Generator{genSlot} <- asksGenerator
-    tip <- getTip
-    if tip <= Origin
-        then pure ()
-        else do
-            finality <-
-                pick
-                    $ genSlot
-                        `suchThat` (\s -> At s > oldFinality)
-                        `suchThat` (\s -> At s <= tip)
-            forwardFinality finality
-    pure past
 
 {- | Property: forwarding at or before tip is a no-op
 forwarding must move the tip ahead
@@ -241,8 +229,8 @@ propertyForwardAfterTipAppliesChanges = do
     logOnFailure $ "Old dump: " ++ show old
     logOnFailure $ "New dump: " ++ show new
     assert
-        "Finality slot should not change after forwarding"
-        $ newFinality == oldFinality
+        "Finality should not regress after forwarding"
+        $ newFinality >= oldFinality
     assert
         "Tip should be updated to the newest slot after forwarding"
         $ newTip == At slot
@@ -305,118 +293,103 @@ propertyRollbackAfterBeforeTipUndoesChanges history = do
             $ elements (toList history)
                 `suchThat` (\s -> fst s >= finality)
     logOnFailure $ "Rolling back to slot: " ++ show slot
-    let fixSlots d =
-            d
-                { dumpFinality = finality
-                }
-        fixedDump = fixSlots dump
-    logOnFailure $ "Expected dump at that slot: " ++ show fixedDump
     rollbackTip slot
     finalDump <- getDump
     keys <- lift $ gets (expectedKeys . fst)
     logOnFailure $ "Expected keys: " ++ show keys
     logOnFailure $ "Final dump after rollback: " ++ show finalDump
+    -- After rollback, finality is the oldest remaining
+    -- rollback point; assocs and tip should match the
+    -- historical dump but finality may differ
     assert
-        "Rollback moves the database to a previous state"
-        $ fixedDump == finalDump
-
-propertyRollbackBeforeFinalityTruncatesTheDatabase
-    :: PropertyConstraints m slot key value
-    => PropertyWithExpected m slot key value ()
-propertyRollbackBeforeFinalityTruncatesTheDatabase = do
-    Generator{genSlot} <- asksGenerator
-    finalityBefore <- getFinality
-    logOnFailure $ "Current finality: " ++ show finalityBefore
-    slot <- case finalityBefore of
-        Origin -> pure Origin
-        At finalitySlot -> pick $ genWithOrigin genSlot `suchThat` (< At finalitySlot)
-    logOnFailure $ "Rolling back before finality to slot: " ++ show slot
-    rollbackTip slot
-    newDump <- getDump
-    logOnFailure
-        $ "New dump after rolling back before finality: " ++ show newDump
+        "Rollback restores associations"
+        $ dumpAssocs finalDump == dumpAssocs dump
     assert
-        "Rolling back before finality should truncate the database"
-        $ newDump == emptyDump
+        "Rollback restores tip"
+        $ dumpTip finalDump == slot
 
-{- | Property: forwarding finality before finality is a no-op
-forwarding finality should work only if the new slot is after the current finality
+{- | Property: rolling back before finality truncates
+Rolling back to a slot before the oldest rollback point
+(finality) should truncate the database.
 -}
-propertyForwardFinalityBeforeFinalityIsNoOp
+propertyBlocksDeeperThanKArePruned
     :: PropertyConstraints m slot key value
     => PropertyWithExpected m slot key value ()
-propertyForwardFinalityBeforeFinalityIsNoOp = do
-    Generator{genSlot} <- asksGenerator
-    finalityBefore <- getFinality
-    case finalityBefore of
+propertyBlocksDeeperThanKArePruned = do
+    finality <- getFinality
+    logOnFailure $ "Current finality: " ++ show finality
+    case finality of
         Origin -> pure ()
         At finalitySlot -> do
-            slot <- pick $ genSlot `suchThat` (<= finalitySlot)
-            oldDump <- getDump
-            forwardFinality slot
+            Generator{genSlot} <- asksGenerator
+            slot <-
+                pick
+                    $ genWithOrigin genSlot
+                        `suchThat` (< At finalitySlot)
+            logOnFailure
+                $ "Rolling back before finality to: "
+                    ++ show slot
+            rollbackTip slot
             newDump <- getDump
+            logOnFailure
+                $ "Dump after rollback: " ++ show newDump
             assert
-                "Forwarding finality slot before or at finality should be no-op"
-                $ newDump == oldDump
+                "Rolling back before finality truncates"
+                $ newDump == emptyDump
 
-{- | Property: forwarding finality after finality reduces the rollback window
-given we know some snapshots of the database at various slots,
-forwarding finality to a slot after the current finality
-rolling back to the old finality should fail
-rolling back to the new finality should restore the database to that state
+{- | Property: blocks within k are rollbackable
+After forwarding n blocks (n <= k), all of them
+should be reachable by rollback.
 -}
-propertyForwardFinalityAfterFinalityReduceTheRollbackWindow
+propertyBlocksWithinKAreRollbackable
     :: PropertyConstraints m slot key value
     => NonEmpty (WithOrigin slot, Dump slot key value)
     -> PropertyWithExpected m slot key value ()
-propertyForwardFinalityAfterFinalityReduceTheRollbackWindow history = do
-    finalityBefore <- getFinality
-    tip <- getTip
-    if tip <= Origin
+propertyBlocksWithinKAreRollbackable history = do
+    k <- asksSecurityParam
+    depth <- lift $ gets (expectedRollbackDepth . fst)
+    logOnFailure $ "Security param k: " ++ show k
+    logOnFailure $ "Current depth: " ++ show depth
+    assert
+        "Rollback depth never exceeds k"
+        $ depth <= k
+    -- Pick any slot from history that is within the
+    -- rollback window and verify rollback works
+    finality <- getFinality
+    let reachable =
+            filter (\(s, _) -> s >= finality) (toList history)
+    if null reachable
         then pure ()
         else do
-            logOnFailure $ "Current tip: " ++ show tip
-            logOnFailure $ "Current finality: " ++ show finalityBefore
-            (oslot, oldDump) <-
-                pick
-                    $ elements (toList history)
-                        `suchThat` (\(s, _) -> s >= finalityBefore)
-            logOnFailure $ "Forwarding finality to slot: " ++ show oslot
-            case oslot of
-                Origin -> pure ()
-                At slot -> do
-                    forwardFinality slot
-                    rollbackTip (At slot)
-                    let oldFixedDump = oldDump{dumpFinality = At slot, dumpTip = At slot}
-                    logOnFailure $ "Expected dump at that slot: " ++ show oldFixedDump
-                    finalDump <- getDump
-                    logOnFailure
-                        $ "Final dump after roll back to new finality: " ++ show finalDump
-                    assert
-                        "Rollback to forwarded finality moves the database to a previous state"
-                        $ finalDump == oldFixedDump
+            (slot, dump) <- pick $ elements reachable
+            logOnFailure
+                $ "Rolling back to: " ++ show slot
+            rollbackTip slot
+            finalDump <- getDump
+            assert
+                "Rollback within k restores associations"
+                $ dumpAssocs finalDump == dumpAssocs dump
+            assert
+                "Rollback within k restores tip"
+                $ dumpTip finalDump == slot
 
-{- | Property: forwarding finality beyond tip sets finality as tip
-finality is set to tip
-opposites are cleared
-associations remain as is
+{- | Property: finality equals oldest rollback point
+After populating with content, the finality reported by
+the database should match the oldest rollback point's slot,
+which is determined by the security parameter k.
 -}
-propertyForwardFinalityBeyondTipSetsFinalityAsTip
+propertyFinalityEqualsOldestRollbackPoint
     :: PropertyConstraints m slot key value
     => PropertyWithExpected m slot key value ()
-propertyForwardFinalityBeyondTipSetsFinalityAsTip = do
-    Generator{genSlot} <- asksGenerator
-    tip <- getTip
-    slot <- case tip of
-        Origin -> pick genSlot
-        At tipSlot -> pick $ genSlot `suchThat` (> tipSlot)
-    current <- getDump
-    forwardFinality slot
-    newFinality <- getFinality
+propertyFinalityEqualsOldestRollbackPoint = do
+    k <- asksSecurityParam
+    dbFinality <- getFinality
+    expectedFin <-
+        lift $ gets (expectedFinality k . fst)
+    logOnFailure
+        $ "DB finality: " ++ show dbFinality
+    logOnFailure
+        $ "Expected finality: " ++ show expectedFin
     assert
-        "Forwarding finality slot beyond tip should set it to tip"
-        $ newFinality == tip
-    updated <- getDump
-    assert
-        "New database just has finality updated, other contents remain the same"
-        $ updated == current{dumpFinality = tip}
+        "DB finality matches expected oldest rollback point"
+        $ dbFinality == expectedFin
