@@ -204,7 +204,12 @@ main = withUtf8 $ do
                             (n2nHost, n2nPort, skipNodeValidation options)
                         N2C{} ->
                             ("localhost", 0, True)
-            SetupResult{setupStartingPoint, setupMithrilSlot, setupIsGenesis} <-
+            SetupResult
+                { setupStartingPoint
+                , setupMithrilSlot
+                , setupIsGenesis
+                , setupSecurityParam = _securityParam
+                } <-
                 setupDB
                     tracer
                     startingPoint

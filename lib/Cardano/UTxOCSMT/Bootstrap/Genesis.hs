@@ -9,6 +9,7 @@ by pre-populating the tree with genesis UTxOs before chain sync starts.
 -}
 module Cardano.UTxOCSMT.Bootstrap.Genesis
     ( readShelleyGenesis
+    , genesisSecurityParam
     , genesisUtxoPairs
     , readByronGenesisUtxoPairs
     )
@@ -30,6 +31,7 @@ import Cardano.Ledger.Address
 import Cardano.Ledger.Api.Tx.In (mkTxIxPartial)
 import Cardano.Ledger.Api.Tx.In qualified as Shelley
 import Cardano.Ledger.Api.Tx.Out (mkBasicTxOut)
+import Cardano.Ledger.BaseTypes (unNonZero)
 import Cardano.Ledger.Binary (natVersion, serialize)
 import Cardano.Ledger.Coin (Coin (..))
 import Cardano.Ledger.Conway (ConwayEra)
@@ -51,6 +53,7 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.Coerce (coerce)
 import Data.ListMap (unListMap)
 import Data.Map.Strict qualified as Map
+import Data.Word (Word64)
 
 {- | Read and parse a Shelley genesis JSON file.
 Patches @systemStart@ if set to @\"PLACEHOLDER\"@.
@@ -66,6 +69,15 @@ readShelleyGenesis fp = do
         Aeson.Error err ->
             error $ "Genesis decode error: " <> err
         Aeson.Success g -> pure g
+
+{- | Extract the security parameter k from genesis.
+
+This is the maximum rollback depth in blocks (e.g. 2160 on
+mainnet).
+-}
+genesisSecurityParam :: ShelleyGenesis -> Word64
+genesisSecurityParam =
+    unNonZero . sgSecurityParam
 
 {- | Extract genesis UTxO pairs as CBOR-encoded (TxIn, TxOut).
 Each initial fund entry becomes a pseudo-TxIn (derived from the

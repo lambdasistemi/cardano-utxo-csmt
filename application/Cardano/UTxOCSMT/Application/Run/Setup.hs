@@ -48,7 +48,8 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     , NodeValidationTrace (..)
     )
 import Cardano.UTxOCSMT.Bootstrap.Genesis
-    ( genesisUtxoPairs
+    ( genesisSecurityParam
+    , genesisUtxoPairs
     , readByronGenesisUtxoPairs
     , readShelleyGenesis
     )
@@ -102,6 +103,8 @@ data SetupResult = SetupResult
     -- ^ If bootstrapped from Mithril, the slot to skip headers until
     , setupIsGenesis :: Bool
     -- ^ True if the DB was freshly initialized (no prior data)
+    , setupSecurityParam :: Word64
+    -- ^ Security parameter k from genesis (max rollback depth in blocks)
     }
 
 {- | Set up the database, potentially bootstrapping from Mithril or genesis.
@@ -121,8 +124,8 @@ setupDB
     -- ^ Tracer for logging setup events
     -> Point
     -- ^ Default starting point (used if not bootstrapping)
-    -> Maybe FilePath
-    -- ^ Optional path to shelley-genesis.json for genesis bootstrap
+    -> FilePath
+    -- ^ Path to shelley-genesis.json (always required)
     -> Maybe FilePath
     -- ^ Optional path to byron-genesis.json for genesis bootstrap
     -> MithrilOptions
@@ -162,7 +165,7 @@ setupDB
 setupDB
     TraceWith{tracer, trace, contra}
     startingPoint
-    mGenesisFile
+    genesisFilePath
     mByronGenesisFile
     mithrilOpts
     networkMagic
@@ -194,6 +197,7 @@ setupDB
                             else regularSetup
                     else regularSetup
             else do
+                (k, _) <- loadGenesis
                 (response, skipSlot) <- transact $ do
                     cp <- getBaseCheckpoint decodePoint
                     ss <- getSkipSlot decodePoint
@@ -210,8 +214,15 @@ setupDB
                                 { setupStartingPoint = point
                                 , setupMithrilSlot = skipSlot
                                 , setupIsGenesis = False
+                                , setupSecurityParam = k
                                 }
       where
+        -- \| Load genesis and extract security parameter + UTxO pairs
+        loadGenesis :: IO (Word64, [(LazyByteString, LazyByteString)])
+        loadGenesis = do
+            g <- readShelleyGenesis genesisFilePath
+            pure (genesisSecurityParam g, genesisUtxoPairs g)
+
         -- \| Validate node connection, returning True if OK or skipped
         validateNode :: IO Bool
         validateNode
@@ -252,48 +263,33 @@ setupDB
         originPoint :: Point
         originPoint = Network.Point Origin
 
-        regularSetup
-            | Just _ <- mGenesisFile = genesisSetup
-            | Just _ <- mByronGenesisFile = genesisSetup
-            | otherwise = do
-                setup (contra New) runner armageddonParams
-                transact
-                    $ putBaseCheckpoint
-                        decodePoint
-                        encodePoint
-                        startingPoint
-                return
-                    SetupResult
-                        { setupStartingPoint = startingPoint
-                        , setupMithrilSlot = Nothing
-                        , setupIsGenesis = True
-                        }
-
-        genesisSetup = do
+        regularSetup = do
             setup (contra New) runner armageddonParams
-            -- Load Shelley genesis UTxOs
-            shelleyPairs <- case mGenesisFile of
-                Just path -> do
-                    genesis <- readShelleyGenesis path
-                    pure $ genesisUtxoPairs genesis
-                Nothing -> pure []
+            (k, shelleyPairs) <- loadGenesis
             -- Load Byron genesis UTxOs
             byronPairs <- case mByronGenesisFile of
                 Just path -> readByronGenesisUtxoPairs path
                 Nothing -> pure []
             let pairs = byronPairs ++ shelleyPairs
+                hasGenesis = not (null pairs)
+                start
+                    | hasGenesis = originPoint
+                    | otherwise = startingPoint
             transact $ do
                 forM_ pairs $ uncurry (csmtInsert ops)
                 putBaseCheckpoint
                     decodePoint
                     encodePoint
-                    originPoint
-            trace $ GenesisBootstrap (length pairs)
+                    start
+            when hasGenesis
+                $ trace
+                $ GenesisBootstrap (length pairs)
             return
                 SetupResult
-                    { setupStartingPoint = originPoint
+                    { setupStartingPoint = start
                     , setupMithrilSlot = Nothing
                     , setupIsGenesis = True
+                    , setupSecurityParam = k
                     }
 
         bootstrapFromMithril = do
@@ -362,6 +358,7 @@ setupDB
                             markBootstrapInProgress
                             insertIO
 
+                    (k, _) <- loadGenesis
                     case result of
                         ImportSuccess{importCheckpoint, importSlot} -> do
                             -- Mithril import succeeded, UTxOs already imported
@@ -383,6 +380,7 @@ setupDB
                                     { setupStartingPoint = importCheckpoint
                                     , setupMithrilSlot = Just importSlot
                                     , setupIsGenesis = True
+                                    , setupSecurityParam = k
                                     }
                         ImportFailed err -> do
                             trace $ Mithril $ ImportError err
