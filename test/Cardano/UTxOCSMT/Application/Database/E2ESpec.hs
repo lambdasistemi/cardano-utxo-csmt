@@ -197,8 +197,8 @@ spec = describe "E2E newRocksDBState" $ do
                     (SlotNo 2)
                     (SlotNo 2)
                     []
-            -- Advance finality past slot 1
-            _ <- forwardFinalityApply update2 (SlotNo 1)
+            -- Finality is now handled inline, no separate call needed
+            _ <- pure update2
             pure ()
 
     it "multiple forwards with inserts and deletes" $ do

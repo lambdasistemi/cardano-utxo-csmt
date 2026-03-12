@@ -74,12 +74,6 @@ data Update m slot key value = Update
         :: WithOrigin slot
         -> m (State m slot key value)
     -- ^ Rollback to the given slot, possibly truncating the database
-    , forwardFinalityApply
-        :: slot
-        -> m (Update m slot key value)
-    {- ^ Move the finality point forward. It's a bit of a pain to have to compute the slot
-    as we pratically need to keep a window of the changes.
-    -}
     }
 
 -- | Read-only database query interface.

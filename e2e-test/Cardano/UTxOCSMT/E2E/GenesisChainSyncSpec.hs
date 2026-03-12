@@ -30,7 +30,6 @@ import Cardano.UTxOCSMT.Application.Run.Application
 import Cardano.UTxOCSMT.Application.Run.Config
     ( armageddonParams
     , context
-    , mFinality
     , prisms
     , slotHash
     , withRocksDB
@@ -149,6 +148,5 @@ spec = describe "Genesis chain sync" $ do
                                                 nullTracer
                                                 state
                                                 slots
-                                                (mFinality runner)
                                     result
                                         `shouldBe` Nothing

@@ -48,7 +48,6 @@ import Cardano.UTxOCSMT.Application.Run.Config
     , context
     , decodePoint
     , encodePoint
-    , mFinality
     , prisms
     , slotHash
     , withRocksDB
@@ -294,7 +293,6 @@ main = withUtf8 $ do
                             (contra Application)
                             state
                             slots
-                            (mFinality runner)
                     N2C{n2cSocket} ->
                         applicationN2C
                             epochSlots
@@ -307,7 +305,6 @@ main = withUtf8 $ do
                             (contra Application)
                             state
                             slots
-                            (mFinality runner)
                 )
                     `catch` \(e :: SomeException) -> do
                         trace
