@@ -360,4 +360,3 @@ rollbackTip newTip = do
                 error "rollbackTip: cannot rollback to a point not in reset points"
             Truncating _ -> do
                 error "rollbackTip: cannot rollback while resetting"
-
