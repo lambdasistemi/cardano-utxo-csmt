@@ -18,7 +18,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( allOps
+    ( fullForwardOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createUpdateState
@@ -127,13 +127,14 @@ spec = describe "Genesis chain sync" $ do
                                     (state, slots) <-
                                         createUpdateState
                                             nullTracer
-                                            allOps
+                                            fullForwardOps
                                             ops
                                             slotHash
                                             (\_ _ -> pure ())
                                             armageddonParams
                                             runner
                                             maxBound
+                                            (\_ -> pure ())
                                     result <-
                                         timeout
                                             15_000_000

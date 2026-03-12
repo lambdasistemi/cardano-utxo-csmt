@@ -3,10 +3,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , mkSplitUpdate
     , newSplitState
 
-      -- * Bench mode
-    , BenchOps (..)
-    , allOps
-    , noOps
+      -- * Forward operation control
+    , ForwardOps (..)
+    , fullForwardOps
+    , kvOnlyForwardOps
+    , benchBaselineOps
 
       -- * Tracing
     , UpdateTrace (..)
@@ -80,8 +81,12 @@ import MTS.Rollbacks.Store qualified as Store
 import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
--- | Controls which DB operations run inside 'forwardTip'.
-data BenchOps = BenchOps
+{- | Controls which DB operations run inside 'forwardTip'.
+
+Used to distinguish KVOnly sync (skip rollback storage
+for throughput) from Full sync (all operations).
+-}
+data ForwardOps = ForwardOps
     { doQueryTip :: Bool
     -- ^ Read tip from rollback points
     , doCsmt :: Bool
@@ -90,13 +95,21 @@ data BenchOps = BenchOps
     -- ^ Store rollback point (includes root hash read)
     }
 
--- | All operations enabled (normal mode).
-allOps :: BenchOps
-allOps = BenchOps True True True
+-- | All operations enabled (Full sync mode).
+fullForwardOps :: ForwardOps
+fullForwardOps = ForwardOps True True True
 
--- | No operations (baseline: transaction overhead only).
-noOps :: BenchOps
-noOps = BenchOps False False False
+{- | KVOnly sync: CSMT insert\/delete runs (journal-only
+ops) but skip tip query and rollback point storage.
+-}
+kvOnlyForwardOps :: ForwardOps
+kvOnlyForwardOps = ForwardOps False True False
+
+{- | No operations (benchmark baseline: transaction
+overhead only).
+-}
+benchBaselineOps :: ForwardOps
+benchBaselineOps = ForwardOps False False False
 
 -- | Query the current tip directly from rollback points.
 queryTip
@@ -177,7 +190,7 @@ renderUpdateTrace
 renderUpdateTrace (UpdateRollbackBegin slot) =
     "Rollback begin at " ++ show slot
 renderUpdateTrace (UpdateForwardTip slot nInsert nDelete _) =
-    "Rollback point at "
+    "Forward tip at "
         ++ show slot
         ++ ": "
         ++ show nInsert
@@ -264,7 +277,7 @@ newState
        , MonadFail m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
         key
@@ -277,16 +290,26 @@ newState
     -> RunTransaction cf op slot hash key value m
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value, [slot])
 newState
     TraceWith{tracer, trace}
-    benchOps
+    forwardOps
     ops
     slotHash
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact}
-    securityParam = do
+    securityParam
+    saveCheckpoint = do
         (cps, rollbackCount) <-
             transact $ do
                 cps <-
@@ -300,13 +323,14 @@ newState
         let update =
                 mkUpdate
                     tracer
-                    benchOps
+                    forwardOps
                     ops
                     slotHash
                     onForward
                     armageddonParams
                     runTransaction
                     securityParam
+                    saveCheckpoint
                     rollbackCount
         pure (update, cps)
 
@@ -324,7 +348,7 @@ newSplitState
        , MonadFail m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> Bool
     -- ^ Is this a fresh (genesis) database?
     -> CSMTOps
@@ -349,10 +373,19 @@ newSplitState
     -> RunTransaction cf op slot hash key value m
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value, [slot])
 newSplitState
     tw@TraceWith{tracer, trace}
-    benchOps
+    forwardOps
     isGenesis
     kvOps
     fullOps
@@ -362,7 +395,8 @@ newSplitState
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact}
-    securityParam = do
+    securityParam
+    saveCheckpoint = do
         (cps, rollbackCount, empty) <-
             transact $ do
                 cps <-
@@ -379,18 +413,19 @@ newSplitState
                     then
                         mkUpdate
                             tracer
-                            benchOps
+                            forwardOps
                             fullOps
                             slotHash
                             onForward
                             armageddonParams
                             runTransaction
                             securityParam
+                            saveCheckpoint
                             rollbackCount
                     else
                         mkSplitUpdate
                             tw
-                            benchOps
+                            forwardOps
                             kvOps
                             fullOps
                             replay
@@ -400,6 +435,7 @@ newSplitState
                             armageddonParams
                             runTransaction
                             securityParam
+                            saveCheckpoint
                             rollbackCount
         pure (update, cps)
 
@@ -411,7 +447,7 @@ forwardTip
        , MonadFail m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
         key
@@ -432,7 +468,7 @@ forwardTip
         Bool
 forwardTip
     TraceWith{trace}
-    BenchOps{doQueryTip, doCsmt, doRollback}
+    ForwardOps{doQueryTip, doCsmt, doRollback}
     CSMTOps{csmtInsert, csmtDelete, csmtRootHash}
     hash
     count
@@ -586,7 +622,7 @@ mkUpdate
        , MonadFail m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
         key
@@ -601,18 +637,28 @@ mkUpdate
     -- ^ Function to run a transaction
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> Int
     -- ^ Initial rollback point count
     -> Update m slot key value
 mkUpdate
     tw@TraceWith{contra, trace}
-    benchOps
+    forwardOps
     ops
     slotHash
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact}
-    securityParam =
+    securityParam
+    saveCheckpoint =
         go
       where
         go count =
@@ -621,15 +667,18 @@ mkUpdate
                     \slot chainTip operations -> do
                         trace $ UpdateTransactBegin slot
                         stored <-
-                            transact
-                                $ forwardTip
-                                    tw
-                                    benchOps
-                                    ops
-                                    (slotHash slot)
-                                    count
-                                    slot
-                                    operations
+                            transact $ do
+                                r <-
+                                    forwardTip
+                                        tw
+                                        forwardOps
+                                        ops
+                                        (slotHash slot)
+                                        count
+                                        slot
+                                        operations
+                                saveCheckpoint slot
+                                pure r
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
                         if stored
@@ -692,7 +741,7 @@ mkSplitUpdate
        , MonadFail m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
         key
@@ -716,12 +765,21 @@ mkSplitUpdate
     -> RunTransaction cf op slot hash key value m
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> Int
     -- ^ Initial rollback point count
     -> Update m slot key value
 mkSplitUpdate
     tw@TraceWith{contra, trace}
-    benchOps
+    forwardOps
     kvOps
     fullOps
     replay
@@ -730,7 +788,8 @@ mkSplitUpdate
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact}
-    securityParam =
+    securityParam
+    saveCheckpoint =
         goKVOnly
       where
         goKVOnly count =
@@ -739,15 +798,18 @@ mkSplitUpdate
                     \slot chainTip operations -> do
                         trace $ UpdateTransactBegin slot
                         stored <-
-                            transact
-                                $ forwardTip
-                                    tw
-                                    benchOps
-                                    kvOps
-                                    (slotHash slot)
-                                    count
-                                    slot
-                                    operations
+                            transact $ do
+                                r <-
+                                    forwardTip
+                                        tw
+                                        kvOnlyForwardOps
+                                        kvOps
+                                        (slotHash slot)
+                                        count
+                                        slot
+                                        operations
+                                saveCheckpoint slot
+                                pure r
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
                         count' <-
@@ -806,13 +868,14 @@ mkSplitUpdate
         goFull =
             mkUpdate
                 tw
-                benchOps
+                forwardOps
                 fullOps
                 slotHash
                 onForward
                 armageddonParams
                 runTransaction
                 securityParam
+                saveCheckpoint
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)

@@ -33,7 +33,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , queryMerkleRoot
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( allOps
+    ( fullForwardOps
     , mkUpdate
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
@@ -312,13 +312,14 @@ withTestDB action =
             action runner
                 $ mkUpdate
                     nullTracer
-                    allOps
+                    fullForwardOps
                     (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
                     maxBound
+                    (\_ -> pure ())
                     0
 
 -- | Run tests with a fresh RocksDB database using address-prefixed CSMT
@@ -344,13 +345,14 @@ withTestDBPrefixed action =
             action runner
                 $ mkUpdate
                     nullTracer
-                    allOps
+                    fullForwardOps
                     (mkCSMTOps fkv h)
                     testSlotHash
                     (\_ _ -> pure ())
                     testArmageddonParams
                     runner
                     maxBound
+                    (\_ -> pure ())
                     0
 
 -- | Open RocksDB with test column families

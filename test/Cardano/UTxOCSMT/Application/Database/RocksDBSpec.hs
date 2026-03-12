@@ -41,7 +41,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( allOps
+    ( fullForwardOps
     , mkUpdate
     )
 import Cardano.UTxOCSMT.Application.Database.Interface (TipOf)
@@ -226,13 +226,14 @@ runRocksDBProperties prop =
     update runner =
         mkUpdate
             nullTracer
-            allOps
+            fullForwardOps
             (mkCSMTOps fkv h)
             (const $ mkHash "")
             (\_ _ -> pure ())
             armageddonParams
             runner
             testSecurityParam
+            (\_ -> pure ())
             1 -- Origin rollback point from setup
 
 test

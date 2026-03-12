@@ -33,7 +33,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( BenchOps
+    ( ForwardOps
     , UpdateTrace
     , newSplitState
     , newState
@@ -99,7 +99,7 @@ newRocksDBState
        , MonadMask m
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> DB
     -> Prisms slot hash key value
     -> CSMTOps
@@ -114,32 +114,43 @@ newRocksDBState
     -> ArmageddonParams hash
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> L.Transaction
+                m
+                ColumnFamily
+                (Columns slot hash key value)
+                BatchOp
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m
         ( (Update m slot key value, [slot])
         , RunTransaction ColumnFamily BatchOp slot hash key value m
         )
 newRocksDBState
     tracer
-    benchOps
+    forwardOps
     db
     prisms
     ops
     slotHash
     onForward
     armageddonParams
-    securityParam = do
+    securityParam
+    saveCheckpoint = do
         runner <- newRunRocksDBTransaction db prisms
         _ <- ensureInitialized runner armageddonParams
         (,runner)
             <$> newState
                 tracer
-                benchOps
+                forwardOps
                 ops
                 slotHash
                 onForward
                 armageddonParams
                 runner
                 securityParam
+                saveCheckpoint
 
 -- | Create Update state from an existing runner
 createUpdateState
@@ -149,7 +160,7 @@ createUpdateState
        , Show slot
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> CSMTOps
         (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
         key
@@ -163,26 +174,37 @@ createUpdateState
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> L.Transaction
+                m
+                ColumnFamily
+                (Columns slot hash key value)
+                BatchOp
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value, [slot])
 createUpdateState
     tracer
-    benchOps
+    forwardOps
     ops
     slotHash
     onForward
     armageddonParams
     runner
-    securityParam = do
+    securityParam
+    saveCheckpoint = do
         _ <- ensureInitialized runner armageddonParams
         newState
             tracer
-            benchOps
+            forwardOps
             ops
             slotHash
             onForward
             armageddonParams
             runner
             securityParam
+            saveCheckpoint
 
 {- | Create split-mode Update state from an existing runner.
 
@@ -195,7 +217,7 @@ createSplitUpdateState
        , Show slot
        )
     => Tracer m (UpdateTrace slot hash)
-    -> BenchOps
+    -> ForwardOps
     -> Bool
     -- ^ Whether the DB was freshly initialized (genesis)
     -> CSMTOps
@@ -220,10 +242,19 @@ createSplitUpdateState
     -> RunTransaction ColumnFamily BatchOp slot hash key value m
     -> Int
     -- ^ Security parameter k (max rollback depth)
+    -> ( slot
+         -> L.Transaction
+                m
+                ColumnFamily
+                (Columns slot hash key value)
+                BatchOp
+                ()
+       )
+    -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value, [slot])
 createSplitUpdateState
     tracer
-    benchOps
+    forwardOps
     isGenesis
     kvOps
     fullOps
@@ -233,11 +264,12 @@ createSplitUpdateState
     onForward
     armageddonParams
     runner
-    securityParam = do
+    securityParam
+    saveCheckpoint = do
         _ <- ensureInitialized runner armageddonParams
         newSplitState
             tracer
-            benchOps
+            forwardOps
             isGenesis
             kvOps
             fullOps
@@ -248,6 +280,7 @@ createSplitUpdateState
             armageddonParams
             runner
             securityParam
+            saveCheckpoint
 
 {- | Ensure the database has been initialized with an Origin rollback point.
 This makes the public API self-initializing so callers can't forget to

@@ -49,6 +49,7 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     )
 import Cardano.UTxOCSMT.Bootstrap.Genesis
     ( genesisSecurityParam
+    , genesisStabilityWindow
     , genesisUtxoPairs
     , readByronGenesisUtxoPairs
     , readShelleyGenesis
@@ -105,6 +106,8 @@ data SetupResult = SetupResult
     -- ^ True if the DB was freshly initialized (no prior data)
     , setupSecurityParam :: Word64
     -- ^ Security parameter k from genesis (max rollback depth in blocks)
+    , setupStabilityWindow :: Word64
+    -- ^ Stability window in slots: @ceiling(3k\/f)@
     }
 
 {- | Set up the database, potentially bootstrapping from Mithril or genesis.
@@ -182,46 +185,57 @@ setupDB
             cleanup (contra New) runner armageddonParams
             trace IncompleteBootstrapCleaned
 
-        new <- checkEmptyRollbacks runner
-        if new
-            then do
-                -- Check if Mithril bootstrap is enabled
-                -- --mithril-bootstrap-only implies --mithril-bootstrap
-                if mithrilEnabled mithrilOpts
-                    || Mithril.mithrilBootstrapOnly mithrilOpts
+        -- Check checkpoint first (works for both KVOnly and Full mode)
+        (mCheckpoint, skipSlot) <- transact $ do
+            cp <- getBaseCheckpoint decodePoint
+            ss <- getSkipSlot decodePoint
+            pure (cp, ss)
+        case mCheckpoint of
+            Just point -> do
+                (k, sw, _) <- loadGenesis
+                trace $ NotEmpty point
+                return
+                    SetupResult
+                        { setupStartingPoint = point
+                        , setupMithrilSlot = skipSlot
+                        , setupIsGenesis = False
+                        , setupSecurityParam = k
+                        , setupStabilityWindow = sw
+                        }
+            Nothing -> do
+                -- No checkpoint: check rollback points for
+                -- backwards compatibility with old DBs
+                new <- checkEmptyRollbacks runner
+                if new
                     then do
-                        -- Validate node connection before expensive Mithril import
-                        validationOk <- validateNode
-                        if validationOk
-                            then bootstrapFromMithril
+                        if mithrilEnabled mithrilOpts
+                            || Mithril.mithrilBootstrapOnly
+                                mithrilOpts
+                            then do
+                                validationOk <- validateNode
+                                if validationOk
+                                    then bootstrapFromMithril
+                                    else regularSetup
                             else regularSetup
-                    else regularSetup
-            else do
-                (k, _) <- loadGenesis
-                (response, skipSlot) <- transact $ do
-                    cp <- getBaseCheckpoint decodePoint
-                    ss <- getSkipSlot decodePoint
-                    pure (cp, ss)
-                case response of
-                    Nothing ->
+                    else
                         error
-                            "setupDB: Database is not empty but \
-                            \no base checkpoint found"
-                    Just point -> do
-                        trace $ NotEmpty point
-                        return
-                            SetupResult
-                                { setupStartingPoint = point
-                                , setupMithrilSlot = skipSlot
-                                , setupIsGenesis = False
-                                , setupSecurityParam = k
-                                }
+                            "setupDB: Database has rollback \
+                            \points but no checkpoint"
       where
-        -- \| Load genesis and extract security parameter + UTxO pairs
-        loadGenesis :: IO (Word64, [(LazyByteString, LazyByteString)])
+        -- \| Load genesis and extract parameters + UTxO pairs
+        loadGenesis
+            :: IO
+                ( Word64
+                , Word64
+                , [(LazyByteString, LazyByteString)]
+                )
         loadGenesis = do
             g <- readShelleyGenesis genesisFilePath
-            pure (genesisSecurityParam g, genesisUtxoPairs g)
+            pure
+                ( genesisSecurityParam g
+                , genesisStabilityWindow g
+                , genesisUtxoPairs g
+                )
 
         -- \| Validate node connection, returning True if OK or skipped
         validateNode :: IO Bool
@@ -265,7 +279,7 @@ setupDB
 
         regularSetup = do
             setup (contra New) runner armageddonParams
-            (k, shelleyPairs) <- loadGenesis
+            (k, sw, shelleyPairs) <- loadGenesis
             -- Load Byron genesis UTxOs
             byronPairs <- case mByronGenesisFile of
                 Just path -> readByronGenesisUtxoPairs path
@@ -290,6 +304,7 @@ setupDB
                     , setupMithrilSlot = Nothing
                     , setupIsGenesis = True
                     , setupSecurityParam = k
+                    , setupStabilityWindow = sw
                     }
 
         bootstrapFromMithril = do
@@ -358,7 +373,7 @@ setupDB
                             markBootstrapInProgress
                             insertIO
 
-                    (k, _) <- loadGenesis
+                    (k, sw, _) <- loadGenesis
                     case result of
                         ImportSuccess{importCheckpoint, importSlot} -> do
                             -- Mithril import succeeded, UTxOs already imported
@@ -381,6 +396,7 @@ setupDB
                                     , setupMithrilSlot = Just importSlot
                                     , setupIsGenesis = True
                                     , setupSecurityParam = k
+                                    , setupStabilityWindow = sw
                                     }
                         ImportFailed err -> do
                             trace $ Mithril $ ImportError err

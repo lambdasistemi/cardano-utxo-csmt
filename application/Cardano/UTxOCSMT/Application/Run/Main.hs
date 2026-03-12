@@ -19,7 +19,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , replayJournal
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( allOps
+    ( fullForwardOps
     , measureUpdateDurations
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
@@ -207,7 +207,8 @@ main = withUtf8 $ do
                 { setupStartingPoint
                 , setupMithrilSlot
                 , setupIsGenesis
-                , setupSecurityParam = _securityParam
+                , setupSecurityParam
+                , setupStabilityWindow
                 } <-
                 setupDB
                     tracer
@@ -224,7 +225,9 @@ main = withUtf8 $ do
                     runner
 
             -- Now create the Update state (logs "New update state")
-            let onForward blockPoint chainTipSlot =
+            let stabilityWindow =
+                    SlotNo setupStabilityWindow
+                onForward blockPoint chainTipSlot =
                     case pointSlot blockPoint of
                         At blockSlot
                             | blockSlot >= chainTipSlot ->
@@ -232,7 +235,9 @@ main = withUtf8 $ do
                         _ -> pure ()
                 isAtTip blockPoint chainTipSlot =
                     case pointSlot blockPoint of
-                        At blockSlot -> blockSlot >= chainTipSlot
+                        At blockSlot ->
+                            blockSlot + stabilityWindow
+                                >= chainTipSlot
                         _ -> False
                 replay =
                     replayJournal 1000 BL.fromStrict fkv h runner
@@ -241,7 +246,7 @@ main = withUtf8 $ do
             (state, slots) <-
                 createSplitUpdateState
                     updateTracer
-                    allOps
+                    fullForwardOps
                     setupIsGenesis
                     kvOps
                     fullOps
@@ -251,7 +256,11 @@ main = withUtf8 $ do
                     onForward
                     armageddonParams
                     runner
-                    maxBound
+                    (fromIntegral setupSecurityParam)
+                    ( putBaseCheckpoint
+                        decodePoint
+                        encodePoint
+                    )
 
             -- Check if we should exit after bootstrap
             when (Mithril.mithrilBootstrapOnly mithrilOptions) $ do
