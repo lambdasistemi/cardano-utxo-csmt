@@ -26,7 +26,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( UpdateTrace
         ( UpdateCSMTMeasured
-        , UpdateFinalityMeasured
         , UpdateRollbackMeasured
         , UpdateTransactMeasured
         )
@@ -186,8 +185,6 @@ stealMetricsEvent (Update (UpdateCSMTMeasured _ _ _ ns)) =
     Just $ CSMTDurationEvent ns
 stealMetricsEvent (Update (UpdateRollbackMeasured _ _ _ _ ns)) =
     Just $ RollbackDurationEvent ns
-stealMetricsEvent (Update (UpdateFinalityMeasured _ _ ns)) =
-    Just $ FinalityDurationEvent ns
 stealMetricsEvent (Update (UpdateTransactMeasured _ secs)) =
     Just $ TransactionDurationEvent secs
 stealMetricsEvent (NotEmpty point) =
@@ -223,7 +220,6 @@ matchHighFrequencyEvents = \case
     Mithril (ImportExtraction (ExtractionProgress _)) -> Just 1.0
     Update (UpdateCSMTMeasured{}) -> Just 1.0
     Update (UpdateRollbackMeasured{}) -> Just 1.0
-    Update (UpdateFinalityMeasured{}) -> Just 1.0
     Update (UpdateTransactMeasured{}) -> Just 1.0
     _ -> Nothing
 

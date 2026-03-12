@@ -18,7 +18,6 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , updateRollbackPoint
     , sampleRollbackPoints
     , newState
-    , newFinality
     )
 where
 
@@ -50,7 +49,6 @@ import Cardano.UTxOCSMT.Application.Database.Interface
 import Control.Monad (forM, forM_)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
-import Data.Function (fix)
 import Data.List.SampleFibonacci
     ( sampleAtFibonacciIntervals
     )
@@ -132,12 +130,6 @@ data UpdateTrace slot hash
         Double
     | UpdateNewState [slot]
     | UpdateJournalReplay
-    | -- | Finality begin (before pruning)
-      UpdateFinalityBegin slot
-    | -- | Finality pruning complete
-      UpdateFinalityDone slot Int
-    | -- | Finality with measured duration (seconds)
-      UpdateFinalityMeasured slot Int Double
     | -- | Per-UTxO timing: inserts then deletes (μs per operation)
       UpdatePerUtxoTiming [Double] [Double]
     | -- | Clock overhead: consecutive clock reads (μs)
@@ -214,22 +206,6 @@ renderUpdateTrace (UpdateNewState slots) =
         ++ show slots
 renderUpdateTrace UpdateJournalReplay =
     "Replaying journal to build CSMT tree"
-renderUpdateTrace (UpdateFinalityBegin slot) =
-    "Finality begin at " ++ show slot
-renderUpdateTrace (UpdateFinalityDone slot pruned) =
-    "Finality done at "
-        ++ show slot
-        ++ ": pruned "
-        ++ show pruned
-        ++ " rollback points"
-renderUpdateTrace (UpdateFinalityMeasured slot pruned secs) =
-    "Finality at "
-        ++ show slot
-        ++ ": pruned "
-        ++ show pruned
-        ++ " rollback points ("
-        ++ show (round (secs * 1e6) :: Int)
-        ++ "μs)"
 renderUpdateTrace (UpdateClockOverhead us) =
     "ClockOverhead: "
         ++ show (round us :: Int)
@@ -696,15 +672,6 @@ mkUpdate
                     Origin -> do
                         armageddonCall
                         pure $ Syncing $ go 0
-                , forwardFinalityApply = \s -> do
-                    trace $ UpdateFinalityBegin s
-                    pruned <-
-                        transact
-                            $ Store.pruneBelow
-                                RollbackPoints
-                                (At s)
-                    trace $ UpdateFinalityDone s pruned
-                    pure $ go (count - pruned)
                 }
         armageddonCall =
             armageddon
@@ -835,15 +802,6 @@ mkSplitUpdate
                         pure
                             $ Syncing
                             $ goKVOnly 0
-                , forwardFinalityApply = \s -> do
-                    trace $ UpdateFinalityBegin s
-                    pruned <-
-                        transact
-                            $ Store.pruneBelow
-                                RollbackPoints
-                                (At s)
-                    trace $ UpdateFinalityDone s pruned
-                    pure $ goKVOnly (count - pruned)
                 }
         goFull =
             mkUpdate
@@ -861,36 +819,13 @@ mkSplitUpdate
                 runTransaction
                 armageddonParams
 
--- | Determines whether a new finality point can be set
-newFinality
-    :: MonadFail m
-    => (WithOrigin slot -> WithOrigin slot -> Bool)
-    -> Transaction m cf (Columns slot hash key value) op (Maybe slot)
-newFinality isFinal = do
-    tip <- queryTip
-    iterating RollbackPoints $ do
-        me <- firstEntry
-        flip ($ me) Origin $ fix $ \go current finality ->
-            case current of
-                Nothing -> pure Nothing
-                Just Entry{entryKey} ->
-                    if isFinal tip entryKey
-                        then do
-                            current' <- nextEntry
-                            go current' entryKey
-                        else pure $ case finality of
-                            Origin -> Nothing
-                            At p -> Just p
-
 {- | Wrap a tracer with duration measurement for
-CSMT ops, rollback point storage, and finality.
+CSMT ops and rollback point storage.
 
 'UpdateCSMTBegin' → 'UpdateCSMTDone' becomes
 'UpdateCSMTMeasured'.
 'UpdateCSMTDone' → 'UpdateForwardTip' becomes
 'UpdateRollbackMeasured'.
-'UpdateFinalityBegin' → 'UpdateFinalityDone' becomes
-'UpdateFinalityMeasured'.
 -}
 measureUpdateDurations
     :: Tracer IO (UpdateTrace slot hash)
@@ -911,11 +846,6 @@ measureUpdateDurations downstream =
             selectRollbackBegin
             selectRollbackEnd
             composeRollback
-        =<< measureDuration
-            Monotonic
-            selectFinalityBegin
-            selectFinalityEnd
-            composeFinality
             downstream
   where
     selectTransactBegin = \case
@@ -942,11 +872,3 @@ measureUpdateDurations downstream =
         _ -> Nothing
     composeRollback _ (s, n, d, r) =
         UpdateRollbackMeasured s n d r
-    selectFinalityBegin = \case
-        UpdateFinalityBegin s -> Just s
-        _ -> Nothing
-    selectFinalityEnd = \case
-        UpdateFinalityDone s p -> Just (s, p)
-        _ -> Nothing
-    composeFinality _ (s, p) =
-        UpdateFinalityMeasured s p

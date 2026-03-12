@@ -5,8 +5,6 @@ module Cardano.UTxOCSMT.Application.Run.Config
     , context
     , prisms
     , slotHash
-    , mFinality
-    , distance
     , encodePoint
     , decodePoint
     )
@@ -44,10 +42,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
-    , RunTransaction (..)
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( newFinality
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Point)
 import Codec.CBOR.Decoding qualified as CBOR
@@ -284,54 +278,3 @@ encodePoint = review (slotP prisms)
 -- | Decode a ByteString to Point for config storage
 decodePoint :: StrictByteString -> Maybe Point
 decodePoint = preview (slotP prisms)
-
-{- | Compute the finality point based on slot distance.
-
-Returns the most recent point that is considered final (more than
-2160 slots behind the tip, approximately 12 hours on Cardano mainnet).
--}
-mFinality
-    :: MonadFail m
-    => RunTransaction cf op Point hash key value m
-    -- ^ Database transaction runner
-    -> m (Maybe Point)
-    -- ^ The finality point, if any
-mFinality (RunTransaction runTx) =
-    runTx $ newFinality isFinal
-  where
-    isFinal
-        :: WithOrigin Point
-        -> WithOrigin Point
-        -> Bool
-    isFinal tip finality =
-        distance tip finality > 2160 * 20
-
-{- | Calculate the slot distance between two points.
-
-Returns 0 if the tip is at Origin. Fails with an error for invalid
-point combinations (e.g., finality at Origin when tip is not).
--}
-distance
-    :: WithOrigin Point
-    -- ^ The tip point
-    -> WithOrigin Point
-    -- ^ The finality point
-    -> SlotNo
-    -- ^ The distance in slots
-distance Origin _ = SlotNo 0
-distance (At (Network.Point Origin)) _ =
-    error "distance: tip at Origin has no slot"
-distance
-    (At (Network.Point (At (Network.Block slotTip _))))
-    Origin = slotTip
-distance
-    (At (Network.Point (At (Network.Block slotTip _))))
-    ( At
-            ( Network.Point
-                    (At (Network.Block slotFinality _))
-                )
-        ) =
-        SlotNo
-            (unSlotNo slotTip - unSlotNo slotFinality)
-distance _ _ =
-    error "distance: finality at Origin has no slot"

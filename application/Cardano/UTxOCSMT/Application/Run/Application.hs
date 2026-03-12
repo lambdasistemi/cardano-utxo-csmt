@@ -124,18 +124,17 @@ type DBState = State IO Point ByteString ByteString
 intersector
     :: Tracer IO ApplicationTrace
     -> IO ()
-    -> IO (Maybe Point)
     -> DBState
     -> Intersector Fetched
-intersector TraceWith{trace, tracer} trUTxO mFinality updater =
+intersector TraceWith{trace, tracer} trUTxO updater =
     Intersector
         { intersectFound = \point -> do
             trace $ ApplicationIntersectionAt point
-            pure $ follower tracer trUTxO mFinality updater
+            pure $ follower tracer trUTxO updater
         , intersectNotFound = do
             trace ApplicationIntersectionFailed
             pure
-                ( intersector tracer trUTxO mFinality updater
+                ( intersector tracer trUTxO updater
                 , [origin]
                 )
         }
@@ -147,13 +146,11 @@ changeToOperation (Create k v) = Insert k v
 follower
     :: Tracer IO ApplicationTrace
     -> IO ()
-    -> IO (Maybe Point)
     -> DBState
     -> Follower Fetched
 follower
     TraceWith{trace, tracer}
     trUTxO
-    newFinalityTarget
     db = ($ db) $ fix $ \go currentDB ->
         Follower
             { rollForward = \Fetched{fetchedPoint, fetchedBlock} tipSlot -> do
@@ -171,20 +168,19 @@ follower
                                     opsCount
                     _ -> pure ()
                 newDB <- case currentDB of
-                    Syncing update -> do
-                        newUpdate <-
-                            forwardTipApply update fetchedPoint tipSlot ops
-                        finality <- newFinalityTarget
-                        Syncing <$> case finality of
-                            Nothing -> pure newUpdate
-                            Just slot -> forwardFinalityApply newUpdate slot
+                    Syncing update ->
+                        Syncing
+                            <$> forwardTipApply
+                                update
+                                fetchedPoint
+                                tipSlot
+                                ops
                     _ -> error "follower: cannot roll forward while intersecting"
                 pure $ go newDB
             , rollBackward = \point ->
                 rollingBack
                     tracer
                     trUTxO
-                    newFinalityTarget
                     point
                     go
                     currentDB
@@ -193,12 +189,11 @@ follower
 rollingBack
     :: Tracer IO ApplicationTrace
     -> IO ()
-    -> IO (Maybe Point)
     -> Point
     -> (DBState -> Follower Fetched)
     -> DBState
     -> IO (ProgressOrRewind Fetched)
-rollingBack TraceWith{trace, tracer} trUTxO newFinalityTarget point follower' state = do
+rollingBack TraceWith{trace, tracer} trUTxO point follower' state = do
     trace $ ApplicationRollingBack point
     case state of
         Syncing update -> do
@@ -210,11 +205,11 @@ rollingBack TraceWith{trace, tracer} trUTxO newFinalityTarget point follower' st
                         $ Syncing newUpdate
                 Truncating newUpdate ->
                     Reset
-                        $ intersector tracer trUTxO newFinalityTarget
+                        $ intersector tracer trUTxO
                         $ Syncing newUpdate
                 Intersecting ps newUpdate ->
                     Rewind ps
-                        $ intersector tracer trUTxO newFinalityTarget
+                        $ intersector tracer trUTxO
                         $ Syncing newUpdate
         _ -> error "rollingBack: cannot roll back while intersecting"
 
@@ -243,8 +238,6 @@ application
     -- ^ Initial database FSM update
     -> [Point]
     -- ^ Available points to sync from
-    -> IO (Maybe Point)
-    -- ^ Finality target. TODO redesign the Update object to avoid this
     -> IO Void
 application
     epochSlots
@@ -258,8 +251,7 @@ application
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     initialDBUpdate
-    availablePoints
-    mFinality =
+    availablePoints =
         do
             hSetBuffering stdout NoBuffering
 
@@ -288,7 +280,7 @@ application
                     setCheckpoint
                     onSkipComplete
                     mSkipTargetSlot
-                    $ intersector tracer counting mFinality
+                    $ intersector tracer counting
                     $ Syncing initialDBUpdate
             let chainFollowingApplication =
                     mkChainSyncApplication
@@ -336,8 +328,6 @@ applicationN2C
     -- ^ Initial database FSM update
     -> [Point]
     -- ^ Available points to sync from
-    -> IO (Maybe Point)
-    -- ^ Finality target
     -> IO Void
 applicationN2C
     epochSlots
@@ -349,8 +339,7 @@ applicationN2C
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     initialDBUpdate
-    availablePoints
-    mFinality =
+    availablePoints =
         do
             hSetBuffering stdout NoBuffering
 
@@ -371,7 +360,7 @@ applicationN2C
                     metricTrace $ BootstrapPhaseEvent Synced
 
                 blockIntersector =
-                    intersector tracer counting mFinality
+                    intersector tracer counting
                         $ Syncing initialDBUpdate
 
                 points =
