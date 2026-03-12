@@ -44,7 +44,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( BenchOps (..)
+    ( ForwardOps (..)
     , UpdateTrace
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
@@ -569,7 +569,7 @@ runStressBench nBlocks utxos =
             $ \db -> do
                 let csmtOps = kvOnlyCSMTOps (view strict)
                     benchOps =
-                        BenchOps
+                        ForwardOps
                             { doQueryTip = False
                             , doCsmt = True
                             , doRollback = False
@@ -585,6 +585,7 @@ runStressBench nBlocks utxos =
                         benchArmageddonParams
                         runner
                         maxBound
+                        (\_ -> pure ())
                 let nOps = length utxos
                     -- Generate fixed-size 34-byte keys (like real UTxO refs:
                     -- 32-byte tx hash + 2-byte index). We encode block+index

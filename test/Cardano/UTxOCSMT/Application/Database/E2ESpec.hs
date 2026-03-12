@@ -27,7 +27,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( allOps
+    ( fullForwardOps
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -135,7 +135,7 @@ withFreshDB action =
                 ((update, _rollbackPoints), _runner) <-
                     newRocksDBState
                         nullTracer
-                        allOps
+                        fullForwardOps
                         db
                         testPrisms
                         (mkCSMTOps testFromKV testHashing)
@@ -143,6 +143,7 @@ withFreshDB action =
                         (\_ _ -> pure ())
                         testArmageddonParams
                         maxBound
+                        (\_ -> pure ())
                 action update
 
 spec :: Spec
@@ -393,7 +394,7 @@ spec = describe "E2E newRocksDBState" $ do
                     ((_, rollbackPoints), _) <-
                         newRocksDBState
                             nullTracer
-                            allOps
+                            fullForwardOps
                             db
                             testPrisms
                             (mkCSMTOps testFromKV testHashing)
@@ -401,6 +402,7 @@ spec = describe "E2E newRocksDBState" $ do
                             (\_ _ -> pure ())
                             testArmageddonParams
                             maxBound
+                            (\_ -> pure ())
                     -- Fresh DB should have no rollback slots
                     -- (Origin is in RollbackPoints but it's not a slot)
                     rollbackPoints `shouldBe` []
