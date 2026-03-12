@@ -27,6 +27,8 @@ services:
       - "--api-port"
       - "8080"
       - "--skip-node-validation"
+      - "--genesis-file"
+      - "/data/genesis/shelley-genesis.json"
 
   e2e-test:
     image: curlimages/curl:latest
