@@ -92,7 +92,6 @@ args=(
     --api-port "$API_PORT"
     --api-docs-port "$API_DOCS_PORT"
     --enable-metrics-reporting
-    --mithril-bootstrap
     "$@"
 )
 

@@ -157,31 +157,6 @@ update-swagger:
     #!/usr/bin/env bash
     nix run .#cardano-utxo-swagger > docs/assets/swagger.json
 
-# Run memory test for streaming UTxO extraction from Mithril snapshots
-# Network: mainnet, preprod, preview (default: preprod)
-# Shows RTS stats including maximum residency (peak memory)
-mithril-extraction-memory-test network="preprod":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
-    echo "Running memory test with {{ network }}..."
-    echo "Tmp dir: $tmp_dir (cleaned up on exit)"
-    echo "This will download a Mithril snapshot (~2-3GB for preprod)"
-    echo ""
-    cabal run memory-test -- \
-        --network "{{ network }}" \
-        --tmp-dir "$tmp_dir"
-
-# Run Mithril E2E tests (requires mithril-client in PATH)
-mithril-e2e:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cabal test unit-tests \
-        --test-show-details=direct \
-        --test-option=--match \
-        --test-option="Mithril"
-
 # Serve documentation locally (finds free port)
 serve-docs:
     #!/usr/bin/env bash

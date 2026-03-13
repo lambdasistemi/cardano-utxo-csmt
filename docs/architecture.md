@@ -100,19 +100,10 @@ If rollback exceeds stored history (truncation), the service restarts sync from 
 
 ## Bootstrapping
 
-Two approaches are available for initial UTxO set population:
+### Genesis Bootstrap
 
-### Mithril Bootstrap
-
-Downloads a certified UTxO snapshot from Mithril aggregators, then syncs headers
-to reach the snapshot slot before continuing normal block processing.
-
-See [Mithril Bootstrap](mithril-bootstrap.md) for details.
-
-### Direct Chain Sync (Planned)
-
-For environments where Mithril is not available, a direct chain sync approach
-is planned with two key optimizations:
+The service bootstraps by reading the initial UTxO set from Byron and Shelley
+genesis files, then syncing all blocks from Origin. Key optimizations:
 
 1. **Era projection**: Project all TxOut to Conway era before storage
 2. **Change reduction**: Reduce UTxO changes inline as ChainSync writes to the buffer,
@@ -139,4 +130,5 @@ Reduction happens inline during ChainSync writes:
 
 CSMT applies the already-reduced batch without additional processing.
 
-See [issue #58](https://github.com/cardano-scaling/cardano-utxo-csmt/issues/58) for details.
+For fast bootstrap via Mithril snapshots, see
+[cardano-mithril-client](https://github.com/lambdasistemi/cardano-mithril-client).
