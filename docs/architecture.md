@@ -4,29 +4,29 @@ This document describes the high-level architecture of the Cardano UTxO CSMT ser
 
 ## Overview
 
-```
-┌─────────────────┐     ┌──────────────────────────────────────────┐
-│  Cardano Node   │     │           UTxO CSMT Service              │
-│                 │     │                                          │
-│  ┌───────────┐  │     │  ┌─────────────┐    ┌─────────────────┐  │
-│  │ ChainSync │◄─┼─────┼──┤ ChainSync   │───►│                 │  │
-│  │  Server   │  │     │  │ Client      │    │                 │  │
-│  └───────────┘  │     │  └─────────────┘    │    Database     │  │
-│                 │     │                     │    (RocksDB)    │  │
-│  ┌───────────┐  │     │  ┌─────────────┐    │                 │  │
-│  │BlockFetch │◄─┼─────┼──┤ BlockFetch  │───►│  ┌───────────┐  │  │
-│  │  Server   │  │     │  │ Client      │    │  │   UTxOs   │  │  │
-│  └───────────┘  │     │  └─────────────┘    │  ├───────────┤  │  │
-│                 │     │                     │  │   CSMT    │  │  │
-└─────────────────┘     │                     │  ├───────────┤  │  │
-                        │  ┌─────────────┐    │  │ Rollback  │  │  │
-                        │  │ HTTP Server │    │  │  Points   │  │  │
-┌─────────────────┐     │  │             │    │  └───────────┘  │  │
-│   HTTP Client   │◄────┼──┤ /metrics    │    │                 │  │
-│                 │     │  │ /proof/:id  │◄───┤                 │  │
-│                 │     │  │ /merkle-... │    └─────────────────┘  │
-└─────────────────┘     │  └─────────────┘                         │
-                        └──────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Node [Cardano Node]
+        CS_S[ChainSync Server]
+        BF_S[BlockFetch Server]
+    end
+    subgraph Service [UTxO CSMT Service]
+        CS_C[ChainSync Client]
+        BF_C[BlockFetch Client]
+        HTTP[HTTP Server<br>/metrics<br>/proof/:id<br>/merkle-roots]
+        subgraph DB [Database — RocksDB]
+            UTxOs
+            CSMT
+            Rollbacks[Rollback Points]
+        end
+    end
+    Client[HTTP Client]
+    CS_C -->|headers| CS_S
+    BF_C -->|blocks| BF_S
+    CS_C --> DB
+    BF_C --> DB
+    HTTP --> DB
+    Client --> HTTP
 ```
 
 ## Components
@@ -110,16 +110,21 @@ genesis files, then syncing all blocks from Origin. Key optimizations:
    eliminating transient UTxOs that are created and consumed during sync
 3. **Double buffering**: ChainSync and CSMT work concurrently on separate buffers
 
-```
-ChainSync ──reduce+write──► Buffer A              CSMT idle
-                               │
-                             [swap]
-                               │
-ChainSync ──reduce+write──► Buffer B    ◄──── CSMT applies Buffer A
-                               │
-                             [swap]
-                               │
-ChainSync ──reduce+write──► Buffer A    ◄──── CSMT applies Buffer B
+```mermaid
+sequenceDiagram
+    participant CS as ChainSync
+    participant A as Buffer A
+    participant B as Buffer B
+    participant CSMT
+
+    CS->>A: reduce + write
+    Note over CSMT: idle
+    Note over A,B: swap
+    CS->>B: reduce + write
+    A->>CSMT: apply batch
+    Note over A,B: swap
+    CS->>A: reduce + write
+    B->>CSMT: apply batch
 ```
 
 Reduction happens inline during ChainSync writes:
