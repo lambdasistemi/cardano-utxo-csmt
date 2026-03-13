@@ -10,10 +10,6 @@ module Cardano.UTxOCSMT.Application.Options
       -- * Derived option accessors
     , networkMagic
     , epochSlotsFor
-
-      -- * Re-exports for Mithril
-    , MithrilOptions (..)
-    , MithrilNetwork (..)
     )
 where
 
@@ -28,18 +24,6 @@ import Control.Applicative ((<|>))
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength (..)
     )
-import Cardano.UTxOCSMT.Mithril.Client (MithrilNetwork (..))
-import Cardano.UTxOCSMT.Mithril.Options
-    ( MithrilOptions (..)
-    , mithrilOptionsParser'
-    )
-import Cardano.UTxOCSMT.Ouroboros.Types (HeaderHash, Point)
-import Data.ByteArray.Encoding
-    ( Base (..)
-    , convertFromBase
-    )
-import Data.ByteString.Char8 qualified as B
-import Data.ByteString.Short qualified as SBS
 import Data.Word (Word16, Word64)
 import Network.Socket (PortNumber)
 import OptEnvConf
@@ -57,25 +41,12 @@ import OptEnvConf
     , setting
     , short
     , str
-    , subConfig
     , switch
     , value
     , withYamlConfig
     )
-import Ouroboros.Consensus.Byron.Ledger (ByronBlock)
-import Ouroboros.Consensus.Cardano.Block
-    ( CardanoShelleyEras
-    , StandardCrypto
-    )
-import Ouroboros.Consensus.HardFork.Combinator (OneEraHash (..))
-import Ouroboros.Network.Block (SlotNo (..))
-import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.Point (WithOrigin (..))
-import Ouroboros.Network.Point qualified as Network
-import Ouroboros.Network.Point qualified as Network.Point
 import Path (Abs, File, Path)
-import Text.Read (readMaybe)
 
 -- | Cardano network selection
 data CardanoNetwork
@@ -107,13 +78,6 @@ epochSlotsFor Preprod = 21600
 epochSlotsFor Preview = 4320
 epochSlotsFor Devnet = 4320
 
--- | Get Mithril network for a Cardano network
-mithrilNetworkFor :: CardanoNetwork -> MithrilNetwork
-mithrilNetworkFor Mainnet = MithrilMainnet
-mithrilNetworkFor Preprod = MithrilPreprod
-mithrilNetworkFor Preview = MithrilPreview
-mithrilNetworkFor Devnet = MithrilPreprod
-
 -- | How to connect to a Cardano node
 data ConnectionMode
     = -- | Node-to-node over TCP (ChainSync headers + BlockFetch)
@@ -130,18 +94,14 @@ data ConnectionMode
 data Options = Options
     { network :: CardanoNetwork
     , connectionMode :: ConnectionMode
-    , startingPoint :: Point
     , headersQueueSize :: EventQueueLength
     , dbPath :: FilePath
     , logPath :: Maybe FilePath
     , apiPort :: Maybe PortNumber
     , apiDocsPort :: Maybe PortNumber
     , metricsOn :: Bool
-    , mithrilOptions :: MithrilOptions
     , syncThreshold :: Word64
     -- ^ Number of slots behind chain tip to consider synced (default: 100)
-    , skipNodeValidation :: Bool
-    -- ^ Skip node connection validation before Mithril bootstrap
     , genesisFile :: FilePath
     -- ^ Path to shelley-genesis.json (required for security parameter)
     , byronGenesisFile :: Maybe FilePath
@@ -204,7 +164,7 @@ networkOption =
         , conf "network"
         , help
             "Cardano network (mainnet, preprod, preview, devnet). \
-            \Sets network magic, default peer node, and Mithril network. \
+            \Sets network magic and default peer node. \
             \Use devnet for local Yaci DevKit networks (magic 42)."
         , metavar "NETWORK"
         , reader $ maybeReader readCardanoNetwork
@@ -253,19 +213,6 @@ connectionModeParser =
     (N2C <$> socketPathOption)
         <|> (N2N <$> nodeNameOption <*> portNumberOption)
 
-startingPointOption :: Parser Point
-startingPointOption =
-    Network.Point
-        <$> setting
-            [ long "starting-point"
-            , short 'f'
-            , help "Starting point to sync from (format: origin or slot number)"
-            , metavar "POINT"
-            , value Origin
-            , reader $ maybeReader readChainPoint
-            , option
-            ]
-
 metricsSwitch :: Parser Bool
 metricsSwitch =
     setting
@@ -275,26 +222,6 @@ metricsSwitch =
         , value False
         , switch True
         ]
-
-readChainPoint
-    :: String
-    -> Maybe
-        ( WithOrigin
-            ( Network.Point.Block
-                SlotNo
-                (OneEraHash (ByronBlock : CardanoShelleyEras StandardCrypto))
-            )
-        )
-readChainPoint "origin" = Just Origin
-readChainPoint string = case break (== '@') string of
-    (blockHashStr, _ : slotNoStr) -> do
-        (hash :: HeaderHash) <-
-            either (const Nothing) (Just . OneEraHash . SBS.toShort)
-                $ convertFromBase Base16
-                $ B.pack blockHashStr
-        slot <- SlotNo <$> readMaybe slotNoStr
-        return $ At $ Network.Block slot hash
-    _ -> Nothing
 
 eventQueueSizeOption :: Parser EventQueueLength
 eventQueueSizeOption =
@@ -344,19 +271,6 @@ syncThresholdOption =
         , option
         ]
 
-skipNodeValidationSwitch :: Parser Bool
-skipNodeValidationSwitch =
-    setting
-        [ long "skip-node-validation"
-        , help
-            "Skip node connection validation before Mithril bootstrap. \
-            \By default, the application validates that the node is \
-            \reachable before starting the potentially long Mithril import."
-        , reader auto
-        , value False
-        , switch True
-        ]
-
 genesisFileOption :: Parser FilePath
 genesisFileOption =
     setting
@@ -396,51 +310,38 @@ optionsParserCore =
     mkOptions
         <$> networkOption
         <*> connectionModeParser
-        <*> startingPointOption
         <*> eventQueueSizeOption
         <*> dbPathOption
         <*> logPathOption
         <*> apiPortOption
         <*> apiDocsPortOption
         <*> metricsSwitch
-        <*> subConfig "mithril" mithrilOptionsParser'
         <*> syncThresholdOption
-        <*> skipNodeValidationSwitch
         <*> genesisFileOption
         <*> byronGenesisFileOption
   where
     mkOptions
         net
         connMode
-        start
         queue
         db
         logP
         api
         apiDocs
         metrics
-        mithril
         threshold
-        skipValidation
         genesis
         byronGenesis =
             Options
                 { network = net
                 , connectionMode = connMode
-                , startingPoint = start
                 , headersQueueSize = queue
                 , dbPath = db
                 , logPath = logP
                 , apiPort = api
                 , apiDocsPort = apiDocs
                 , metricsOn = metrics
-                , mithrilOptions =
-                    mithril
-                        { mithrilNetwork =
-                            mithrilNetworkFor net
-                        }
                 , syncThreshold = threshold
-                , skipNodeValidation = skipValidation
                 , genesisFile = genesis
                 , byronGenesisFile = byronGenesis
                 }

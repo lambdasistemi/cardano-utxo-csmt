@@ -38,18 +38,10 @@ import Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
     , setupDB
     )
-import Cardano.UTxOCSMT.Mithril.Client
-    ( MithrilNetwork (..)
-    )
-import Cardano.UTxOCSMT.Mithril.Options
-    ( MithrilOptions (..)
-    )
 import Control.Tracer (nullTracer)
-import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Magic
     ( NetworkMagic (..)
     )
-import Ouroboros.Network.Point (WithOrigin (..))
 import System.FilePath ((</>))
 import System.IO.Temp
     ( withSystemTempDirectory
@@ -71,24 +63,6 @@ shelleyGenesisPath =
 
 devnetMagic :: NetworkMagic
 devnetMagic = NetworkMagic 42
-
-originPoint :: Network.Point block
-originPoint = Network.Point Origin
-
-disabledMithril :: MithrilOptions
-disabledMithril =
-    MithrilOptions
-        { mithrilEnabled = False
-        , mithrilBootstrapOnly = False
-        , mithrilNetwork = MithrilPreprod
-        , mithrilAggregatorUrl = Nothing
-        , mithrilGenesisVk = Nothing
-        , mithrilClientPath = "mithril-client"
-        , mithrilDownloadDir = Nothing
-        , mithrilAncillaryVk = Nothing
-        , mithrilSkipAncillaryVerification =
-            False
-        }
 
 spec :: Spec
 spec = describe "Genesis chain sync" $ do
@@ -113,14 +87,8 @@ spec = describe "Genesis chain sync" $ do
                                         } <-
                                         setupDB
                                             nullTracer
-                                            originPoint
                                             shelleyGenesisPath
                                             Nothing
-                                            disabledMithril
-                                            devnetMagic
-                                            "localhost"
-                                            0
-                                            True
                                             armageddonParams
                                             ops
                                             runner

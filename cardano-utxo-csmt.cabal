@@ -129,8 +129,6 @@ library application
     , containers
     , contra-tracer
     , contra-tracer-contrib
-    , http-client
-    , http-client-tls
     , lens
     , memory
     , mtl
@@ -143,7 +141,6 @@ library application
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions
     , strict-stm
-    , temporary
     , text
     , time
     , with-utf8
@@ -179,12 +176,6 @@ library library
     Cardano.UTxOCSMT.Application.SampleList
     Cardano.UTxOCSMT.Application.UTxOs
     Cardano.UTxOCSMT.Bootstrap.Genesis
-    Cardano.UTxOCSMT.Mithril.AncillaryVerifier
-    Cardano.UTxOCSMT.Mithril.Client
-    Cardano.UTxOCSMT.Mithril.Extraction
-    Cardano.UTxOCSMT.Mithril.Import
-    Cardano.UTxOCSMT.Mithril.Options
-    Cardano.UTxOCSMT.Mithril.Streaming
     Cardano.UTxOCSMT.Ouroboros.Application
     Cardano.UTxOCSMT.Ouroboros.Codecs
     Cardano.UTxOCSMT.Ouroboros.Connection
@@ -198,7 +189,6 @@ library library
     , async
     , autodocodec
     , base
-    , base16-bytestring
     , bytestring
     , cardano-crypto-class
     , cardano-crypto-wrapper
@@ -218,16 +208,10 @@ library library
     , containers
     , contra-tracer
     , contra-tracer-contrib
-    , crypton
-    , directory
     , exceptions
-    , filepath
     , foldl
-    , http-client
-    , http-types
     , lens
     , memory
-    , mempack
     , mtl
     , mts:csmt
     , mts:rollbacks
@@ -248,14 +232,11 @@ library library
     , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
     , serialise
-    , streaming
-    , streaming-bytestring
     , strict-sop-core
     , strict-stm
     , swagger2
     , text
     , time
-    , typed-process
     , typed-protocols
     , unliftio
 
@@ -294,42 +275,6 @@ executable db-query
     , bytestring
     , cardano-utxo-csmt:library
     , rocksdb-haskell-jprupp
-
-  default-language: Haskell2010
-
-executable extract-utxos
-  import:           warnings
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
-  main-is:          executables/extract-utxos/main.hs
-  other-modules:    Paths_cardano_utxo_csmt
-  build-depends:
-    , base
-    , bytestring
-    , cardano-utxo-csmt:library
-    , contra-tracer
-    , http-client
-    , http-client-tls
-    , opt-env-conf
-    , serialise
-    , streaming
-    , temporary
-
-  default-language: Haskell2010
-
-executable memory-test
-  import:           warnings
-  ghc-options:      -threaded -rtsopts "-with-rtsopts=-N -s" -O2
-  main-is:          executables/memory-test/Main.hs
-  other-modules:    Paths_cardano_utxo_csmt
-  build-depends:
-    , base
-    , cardano-utxo-csmt:library
-    , contra-tracer
-    , http-client
-    , http-client-tls
-    , opt-env-conf
-    , streaming
-    , time
 
   default-language: Haskell2010
 
@@ -391,9 +336,6 @@ test-suite unit-tests
     Cardano.UTxOCSMT.Application.Database.RocksDBSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
-    Cardano.UTxOCSMT.Mithril.AncillaryVerifierSpec
-    Cardano.UTxOCSMT.Mithril.ClientSpec
-    Cardano.UTxOCSMT.Mithril.ImportSpec
     Data.List.SampleFibonacciSpec
     Data.Tracer.ThrottleSpec
 
