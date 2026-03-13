@@ -18,4 +18,4 @@ jobs:
         with:
           name: paolino
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - run: nix develop github:paolino/dev-assets?dir=mkdocs -c mkdocs gh-deploy --force
+      - run: nix develop github:paolino/dev-assets?dir=mkdocs -c mkdocs-deploy --force
