@@ -43,9 +43,11 @@ Each block updates the tree, producing a new Merkle root that commits to the ent
 - [x] HTTP API with Swagger documentation
 - [x] Merkle roots endpoint
 - [x] Inclusion proofs endpoint
-- [ ] Bootstrap without mithril
+- [x] Genesis bootstrap (Byron + Shelley)
 - [ ] Exclusion proofs
 - [ ] Address completeness proofs
+
+For fast bootstrap via Mithril snapshots, see [cardano-mithril-client](https://github.com/lambdasistemi/cardano-mithril-client).
 
 ## Links
 

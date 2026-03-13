@@ -189,7 +189,7 @@ A JSON file with UTxO set root hashes covering the rollback window, updated ever
 - ✅ Merkle tree construction from UTxO set
 - ✅ Proof generation and verification
 - ✅ HTTP API for light clients
-- ✅ Fast bootstrap via Mithril
+- ✅ Fast bootstrap via genesis + chain sync
 - ✅ Real-time chain sync
 
 **Next Steps**

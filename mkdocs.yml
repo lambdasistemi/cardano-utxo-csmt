@@ -14,7 +14,6 @@ theme:
 
 plugins:
   - search
-  - asciinema-player
   - swagger-ui-tag
   - macros
 
@@ -37,7 +36,6 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Mithril Bootstrap: mithril-bootstrap.md
   - Architecture: architecture.md
   - Database Schema: database-schema.md
   - API Reference:

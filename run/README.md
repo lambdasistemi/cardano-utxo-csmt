@@ -63,8 +63,8 @@ CLEAN=true ./run/cardano-utxo.sh preview
 Pass extra flags after the network:
 
 ```bash
-# Start from specific slot
-./run/cardano-utxo.sh preview --starting-point 12345678
+# Provide genesis files for initial bootstrap
+./run/cardano-utxo.sh preview --genesis-file /path/to/shelley-genesis.json --byron-genesis-file /path/to/byron-genesis.json
 ```
 
 ## Endpoints
