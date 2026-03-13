@@ -8,8 +8,7 @@ where
 
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.Query
-    ( clearSkipSlot
-    , putBaseCheckpoint
+    ( putBaseCheckpoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
@@ -72,7 +71,6 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     , stealMetricsEvent
     )
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
-import Cardano.UTxOCSMT.Mithril.Options qualified as Mithril
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.Class.MonadSTM.Strict
     ( MonadSTM (..)
@@ -102,7 +100,6 @@ import Ouroboros.Consensus.Ledger.SupportsPeerSelection (PortNumber)
 import Ouroboros.Network.Block (SlotNo (..), pointSlot)
 import Ouroboros.Network.Point (WithOrigin (..))
 import Paths_cardano_utxo_csmt (version)
-import System.Exit (exitSuccess)
 import System.IO (BufferMode (..), hSetBuffering, stdout)
 
 -- | Start an HTTP service in a linked async thread
@@ -128,9 +125,7 @@ main = withUtf8 $ do
         , logPath
         , apiPort
         , metricsOn
-        , startingPoint
         , headersQueueSize
-        , mithrilOptions
         } <-
         runParser
             version
@@ -195,31 +190,16 @@ main = withUtf8 $ do
                         (queryUTxOsByAddress runner)
                         getReadyResponse
 
-            -- Do Mithril bootstrap before creating Update state
-            -- N2C mode skips TCP node validation (uses Unix socket)
-            let (setupNodeName, setupNodePort, setupSkipValidation) =
-                    case connectionMode options of
-                        N2N{n2nHost, n2nPort} ->
-                            (n2nHost, n2nPort, skipNodeValidation options)
-                        N2C{} ->
-                            ("localhost", 0, True)
             SetupResult
                 { setupStartingPoint
-                , setupMithrilSlot
                 , setupIsGenesis
                 , setupSecurityParam
                 , setupStabilityWindow
                 } <-
                 setupDB
                     tracer
-                    startingPoint
                     (genesisFile options)
                     (byronGenesisFile options)
-                    mithrilOptions
-                    (networkMagic options)
-                    setupNodeName
-                    setupNodePort
-                    setupSkipValidation
                     armageddonParams
                     ops
                     runner
@@ -262,27 +242,17 @@ main = withUtf8 $ do
                         encodePoint
                     )
 
-            -- Check if we should exit after bootstrap
-            when (Mithril.mithrilBootstrapOnly mithrilOptions) $ do
-                trace $ BootstrapOnlyExit setupStartingPoint
-                exitSuccess
-
-            -- Create checkpoint action and skip configuration
+            -- Create checkpoint action
             let setCheckpoint point =
-                    transact runner $ do
-                        putBaseCheckpoint decodePoint encodePoint point
-                        clearSkipSlot decodePoint encodePoint
-                mSkipTargetSlot = SlotNo <$> setupMithrilSlot
+                    transact runner
+                        $ putBaseCheckpoint
+                            decodePoint
+                            encodePoint
+                            point
 
             -- Log before starting the application
             trace ApplicationStarting
-
-            -- Emit bootstrap phase based on whether we need to sync headers
-            case mSkipTargetSlot of
-                Just _ ->
-                    traceWith metricsEvent $ BootstrapPhaseEvent SyncingHeaders
-                Nothing ->
-                    traceWith metricsEvent $ BootstrapPhaseEvent Synced
+            traceWith metricsEvent $ BootstrapPhaseEvent Synced
 
             let epochSlots =
                     EpochSlots $ epochSlotsFor $ network options
@@ -297,7 +267,7 @@ main = withUtf8 $ do
                             setupStartingPoint
                             headersQueueSize
                             setCheckpoint
-                            mSkipTargetSlot
+                            Nothing
                             metricsEvent
                             (contra Application)
                             state
@@ -309,7 +279,7 @@ main = withUtf8 $ do
                             n2cSocket
                             setupStartingPoint
                             setCheckpoint
-                            mSkipTargetSlot
+                            Nothing
                             metricsEvent
                             (contra Application)
                             state

@@ -26,7 +26,6 @@ services:
       - "/tmp/e2e-db"
       - "--api-port"
       - "8080"
-      - "--skip-node-validation"
       - "--genesis-file"
       - "/data/genesis/shelley-genesis.json"
 

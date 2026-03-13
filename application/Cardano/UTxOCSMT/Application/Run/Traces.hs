@@ -15,8 +15,8 @@ where
 -- License     : Apache-2.0
 --
 -- This module defines the trace types used for logging throughout the main
--- application lifecycle, including startup, database operations, HTTP services,
--- and Mithril bootstrap events.
+-- application lifecycle, including startup, database operations, and HTTP
+-- services.
 
 import CSMT.Hashes (Hash)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
@@ -38,21 +38,6 @@ import Cardano.UTxOCSMT.Application.Metrics
 import Cardano.UTxOCSMT.Application.Run.Application
     ( ApplicationTrace (..)
     , renderApplicationTrace
-    )
-import Cardano.UTxOCSMT.Mithril.Client
-    ( MithrilTrace (MithrilDownloadProgress)
-    )
-import Cardano.UTxOCSMT.Mithril.Extraction
-    ( ExtractionTrace
-        ( ExtractionCounting
-        , ExtractionDecodedState
-        , ExtractionProgress
-        , ExtractionStreamStarting
-        )
-    )
-import Cardano.UTxOCSMT.Mithril.Import
-    ( ImportTrace (..)
-    , renderImportTrace
     )
 import Cardano.UTxOCSMT.Ouroboros.Connection
     ( NodeConnectionError (..)
@@ -92,20 +77,12 @@ data MainTraces
       ServeApi
     | -- | API documentation server is starting
       ServeDocs
-    | -- | Mithril bootstrap event
-      Mithril ImportTrace
-    | -- | Exiting after bootstrap-only mode
-      BootstrapOnlyExit Point
     | -- | HTTP service encountered an error
       HTTPServiceError String
     | -- | Application is connecting to the node
       ApplicationStarting
     | -- | Node connection validation event
       NodeValidation NodeValidationTrace
-    | -- | Incomplete bootstrap detected on startup
-      IncompleteBootstrapDetected
-    | -- | Incomplete bootstrap cleanup completed
-      IncompleteBootstrapCleaned
     | -- | Genesis bootstrap: inserted N UTxOs from genesis file
       GenesisBootstrap Int
     deriving (Show)
@@ -128,21 +105,12 @@ renderMainTraces ServeApi =
     "Starting API server..."
 renderMainTraces ServeDocs =
     "Starting API documentation server..."
-renderMainTraces (Mithril mt) =
-    "Mithril: " ++ renderImportTrace mt
-renderMainTraces (BootstrapOnlyExit point) =
-    "Bootstrap complete, exiting (--mithril-bootstrap-only). Checkpoint: "
-        ++ show point
 renderMainTraces (HTTPServiceError err) =
     "ERROR: HTTP service failed to start: " ++ err
 renderMainTraces ApplicationStarting =
     "Starting Ouroboros node connection and chain sync application..."
 renderMainTraces (NodeValidation nvt) =
     "Node validation: " ++ renderNodeValidationTrace nvt
-renderMainTraces IncompleteBootstrapDetected =
-    "Incomplete bootstrap detected, cleaning up partial data..."
-renderMainTraces IncompleteBootstrapCleaned =
-    "Incomplete bootstrap cleanup completed, retrying bootstrap..."
 renderMainTraces (GenesisBootstrap n) =
     "Genesis bootstrap: inserted "
         ++ show n
@@ -191,20 +159,6 @@ stealMetricsEvent (NotEmpty point) =
     Just $ BaseCheckpointEvent point
 stealMetricsEvent (Application (ApplicationRollingBack _)) =
     Just $ BootstrapPhaseEvent RollingBack
-stealMetricsEvent (Mithril ImportStarting) =
-    Just $ BootstrapPhaseEvent Downloading
-stealMetricsEvent (Mithril (ImportMithril (MithrilDownloadProgress bytes))) =
-    Just $ DownloadProgressEvent bytes
-stealMetricsEvent (Mithril (ImportExtractingUTxO _)) =
-    Just $ BootstrapPhaseEvent Counting
-stealMetricsEvent (Mithril (ImportExtraction (ExtractionCounting count))) =
-    Just $ CountingProgressEvent count
-stealMetricsEvent (Mithril (ImportExtraction (ExtractionDecodedState total))) =
-    Just $ ExtractionTotalEvent total
-stealMetricsEvent (Mithril (ImportExtraction ExtractionStreamStarting)) =
-    Just $ BootstrapPhaseEvent Extracting
-stealMetricsEvent (Mithril (ImportExtraction (ExtractionProgress count))) =
-    Just $ ExtractionProgressEvent count
 stealMetricsEvent _ = Nothing
 
 {- | Match high-frequency events for throttling.
@@ -215,9 +169,6 @@ are throttled to 1 Hz to avoid flooding logs during sync.
 -}
 matchHighFrequencyEvents :: MainTraces -> Maybe Double
 matchHighFrequencyEvents = \case
-    Mithril (ImportMithril (MithrilDownloadProgress _)) -> Just 1.0
-    Mithril (ImportExtraction (ExtractionCounting _)) -> Just 1.0
-    Mithril (ImportExtraction (ExtractionProgress _)) -> Just 1.0
     Update (UpdateCSMTMeasured{}) -> Just 1.0
     Update (UpdateRollbackMeasured{}) -> Just 1.0
     Update (UpdateTransactMeasured{}) -> Just 1.0
