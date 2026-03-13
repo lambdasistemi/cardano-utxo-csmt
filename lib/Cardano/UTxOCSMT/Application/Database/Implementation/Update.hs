@@ -9,6 +9,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , kvOnlyForwardOps
     , benchBaselineOps
 
+      -- * Split mode
+    , Phase (..)
+    , SplitMode (..)
+    , mkSplitMode
+
       -- * Tracing
     , UpdateTrace (..)
     , renderUpdateTrace
@@ -47,9 +52,15 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, when)
+import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
+import Data.IORef
+    ( newIORef
+    , readIORef
+    , writeIORef
+    )
 import Data.List.SampleFibonacci
     ( sampleAtFibonacciIntervals
     )
@@ -110,6 +121,74 @@ overhead only).
 -}
 benchBaselineOps :: ForwardOps
 benchBaselineOps = ForwardOps False False False
+
+-- | Sync phase for the two-phase KVOnly→Full strategy.
+data Phase = KVOnly | Full
+    deriving stock (Show, Eq)
+
+{- | Phase-aware operations selector with transition
+logic.
+
+Upstream owns the state machine (phase transitions),
+downstream owns the transaction. This lets
+'CageFollower' use the same KVOnly→Full strategy as
+'mkSplitUpdate' without going through the 'Update'
+continuation API.
+-}
+data SplitMode m slot tip ops = SplitMode
+    { currentOps :: m ops
+    -- ^ Get current phase's operations
+    , afterForward :: slot -> tip -> m ()
+    {- ^ Post-forward hook: check tip proximity,
+    replay journal and transition if needed
+    -}
+    , currentPhase :: m Phase
+    -- ^ Query current phase
+    }
+
+{- | Create a 'SplitMode' managing phase state via
+an 'IORef'.
+
+While in 'KVOnly', 'afterForward' checks 'isAtTip'
+after each block; on first @True@ it runs @replay@
+(journal → tree rebuild) and switches to 'Full'.
+Once in 'Full', 'afterForward' is a no-op.
+-}
+mkSplitMode
+    :: MonadIO m
+    => ops
+    -- ^ KVOnly ops (phase 1)
+    -> ops
+    -- ^ Full ops (phase 2)
+    -> (slot -> tip -> Bool)
+    -- ^ Tip proximity predicate
+    -> m ()
+    -- ^ Replay action (journal → tree rebuild)
+    -> Phase
+    -- ^ Initial phase
+    -> IO (SplitMode m slot tip ops)
+mkSplitMode kvOps fullOps isAtTip replay initial =
+    do
+        phaseRef <- newIORef initial
+        pure
+            SplitMode
+                { currentOps = do
+                    p <- liftIO $ readIORef phaseRef
+                    pure $ case p of
+                        KVOnly -> kvOps
+                        Full -> fullOps
+                , afterForward = \slot tip -> do
+                    p <- liftIO $ readIORef phaseRef
+                    when (p == KVOnly && isAtTip slot tip)
+                        $ do
+                            replay
+                            liftIO
+                                $ writeIORef
+                                    phaseRef
+                                    Full
+                , currentPhase =
+                    liftIO $ readIORef phaseRef
+                }
 
 -- | Query the current tip directly from rollback points.
 queryTip
@@ -346,6 +425,7 @@ newSplitState
        , Ord slot
        , Show slot
        , MonadFail m
+       , MonadIO m
        )
     => Tracer m (UpdateTrace slot hash)
     -> ForwardOps
@@ -384,7 +464,7 @@ newSplitState
     -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value, [slot])
 newSplitState
-    tw@TraceWith{tracer, trace}
+    tw@TraceWith{trace}
     forwardOps
     isGenesis
     kvOps
@@ -408,35 +488,32 @@ newSplitState
                 empty <- journalEmpty
                 pure (cps, rollbackCount, empty)
         trace $ UpdateNewState cps
-        let update =
+        let startPhase =
                 if empty && not isGenesis
-                    then
-                        mkUpdate
-                            tracer
-                            forwardOps
-                            fullOps
-                            slotHash
-                            onForward
-                            armageddonParams
-                            runTransaction
-                            securityParam
-                            saveCheckpoint
-                            rollbackCount
-                    else
-                        mkSplitUpdate
-                            tw
-                            forwardOps
-                            kvOps
-                            fullOps
-                            replay
-                            isAtTip
-                            slotHash
-                            onForward
-                            armageddonParams
-                            runTransaction
-                            securityParam
-                            saveCheckpoint
-                            rollbackCount
+                    then Full
+                    else KVOnly
+        splitMode <-
+            liftIO
+                $ mkSplitMode
+                    kvOps
+                    fullOps
+                    isAtTip
+                    ( trace UpdateJournalReplay
+                        >> replay
+                    )
+                    startPhase
+        let update =
+                mkSplitUpdate
+                    tw
+                    forwardOps
+                    splitMode
+                    slotHash
+                    onForward
+                    armageddonParams
+                    runTransaction
+                    securityParam
+                    saveCheckpoint
+                    rollbackCount
         pure (update, cps)
 
 -- | Apply forward tip.
@@ -728,11 +805,13 @@ mkUpdate
                 runTransaction
                 armageddonParams
 
-{- | Two-phase update: starts in KVOnly mode, switches to Full
+{- | Two-phase update: starts in the phase determined
+by the 'SplitMode', switching from KVOnly to Full
 after replaying the journal on first tip-touch.
 
-The follower is blocked during replay (forwardTipApply runs
-synchronously), making the transition atomic w.r.t. chain sync.
+The follower is blocked during replay
+('afterForward' runs synchronously), making the
+transition atomic w.r.t. chain sync.
 -}
 mkSplitUpdate
     :: ( Ord key
@@ -742,22 +821,22 @@ mkSplitUpdate
        )
     => Tracer m (UpdateTrace slot hash)
     -> ForwardOps
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
-        key
-        value
-        hash
-    -- ^ KVOnly ops (phase 1)
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
-        key
-        value
-        hash
-    -- ^ Full ops (phase 2)
-    -> m ()
-    -- ^ Replay callback
-    -> (slot -> TipOf slot -> Bool)
-    -- ^ Tip detection predicate
+    -> SplitMode
+        m
+        slot
+        (TipOf slot)
+        ( CSMTOps
+            ( Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+            )
+            key
+            value
+            hash
+        )
+    -- ^ Phase-aware ops selector
     -> (slot -> hash)
     -> (slot -> TipOf slot -> m ())
     -- ^ Called after each forward
@@ -773,66 +852,72 @@ mkSplitUpdate
                 op
                 ()
        )
-    -- ^ Save checkpoint (runs inside forwardTip transaction)
+    -- ^ Save checkpoint (runs inside transaction)
     -> Int
     -- ^ Initial rollback point count
     -> Update m slot key value
 mkSplitUpdate
     tw@TraceWith{contra, trace}
     forwardOps
-    kvOps
-    fullOps
-    replay
-    isAtTip
+    splitMode
     slotHash
     onForward
     armageddonParams
     runTransaction@RunTransaction{transact}
     securityParam
     saveCheckpoint =
-        goKVOnly
+        go
       where
-        goKVOnly count =
+        go count =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
-                        trace $ UpdateTransactBegin slot
+                        ops <- currentOps splitMode
+                        phase <-
+                            currentPhase splitMode
+                        let fwdOps = case phase of
+                                KVOnly ->
+                                    kvOnlyForwardOps
+                                Full -> forwardOps
+                        trace
+                            $ UpdateTransactBegin slot
                         stored <-
                             transact $ do
                                 r <-
                                     forwardTip
                                         tw
-                                        kvOnlyForwardOps
-                                        kvOps
+                                        fwdOps
+                                        ops
                                         (slotHash slot)
                                         count
                                         slot
                                         operations
                                 saveCheckpoint slot
                                 pure r
-                        trace $ UpdateTransactDone slot
+                        trace
+                            $ UpdateTransactDone slot
                         onForward slot chainTip
                         count' <-
                             if stored
                                 then do
-                                    let newCount = count + 1
+                                    let newCount =
+                                            count + 1
                                     pruned <-
                                         pruneExcess
                                             securityParam
                                             newCount
                                             runTransaction
-                                    pure (newCount - pruned)
+                                    pure
+                                        (newCount - pruned)
                                 else pure count
-                        if isAtTip slot chainTip
-                            then do
-                                trace UpdateJournalReplay
-                                replay
-                                pure $ goFull count'
-                            else
-                                pure
-                                    $ goKVOnly count'
+                        afterForward
+                            splitMode
+                            slot
+                            chainTip
+                        pure $ go count'
                 , rollbackTipApply = \case
                     At s -> do
+                        ops <- currentOps splitMode
                         r <-
                             transact $ do
                                 tip <- queryTip
@@ -845,37 +930,26 @@ mkSplitUpdate
                                         Store.rollbackTo
                                             RollbackPoints
                                             ( rollbackRollbackPoint
-                                                kvOps
+                                                ops
                                             )
                                             (At s)
                         case r of
                             Store.RollbackSucceeded deleted ->
                                 pure
                                     $ Syncing
-                                    $ goKVOnly
+                                    $ go
                                         (count - deleted)
                             Store.RollbackImpossible -> do
                                 armageddonCall
                                 pure
                                     $ Truncating
-                                    $ goKVOnly 0
+                                    $ go 0
                     Origin -> do
                         armageddonCall
                         pure
                             $ Syncing
-                            $ goKVOnly 0
+                            $ go 0
                 }
-        goFull =
-            mkUpdate
-                tw
-                forwardOps
-                fullOps
-                slotHash
-                onForward
-                armageddonParams
-                runTransaction
-                securityParam
-                saveCheckpoint
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)

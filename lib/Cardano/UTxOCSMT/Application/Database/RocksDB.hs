@@ -212,6 +212,7 @@ Starts in KVOnly mode if journal is non-empty, otherwise Full.
 -}
 createSplitUpdateState
     :: ( MonadFail m
+       , MonadIO m
        , Ord key
        , Ord slot
        , Show slot
