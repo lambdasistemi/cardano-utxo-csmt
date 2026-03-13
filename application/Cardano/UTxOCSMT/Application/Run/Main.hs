@@ -34,8 +34,6 @@ import Cardano.UTxOCSMT.Application.Metrics
 import Cardano.UTxOCSMT.Application.Options
     ( ConnectionMode (..)
     , Options (..)
-    , epochSlotsFor
-    , networkMagic
     , optionsParser
     )
 import Cardano.UTxOCSMT.Application.Run.Application
@@ -195,6 +193,8 @@ main = withUtf8 $ do
                 , setupIsGenesis
                 , setupSecurityParam
                 , setupStabilityWindow
+                , setupNetworkMagic
+                , setupEpochSlots
                 } <-
                 setupDB
                     tracer
@@ -255,13 +255,13 @@ main = withUtf8 $ do
             traceWith metricsEvent $ BootstrapPhaseEvent Synced
 
             let epochSlots =
-                    EpochSlots $ epochSlotsFor $ network options
+                    EpochSlots setupEpochSlots
             result <-
                 ( case connectionMode options of
                     N2N{n2nHost, n2nPort} ->
                         application
                             epochSlots
-                            (networkMagic options)
+                            setupNetworkMagic
                             n2nHost
                             n2nPort
                             setupStartingPoint
@@ -275,7 +275,7 @@ main = withUtf8 $ do
                     N2C{n2cSocket} ->
                         applicationN2C
                             epochSlots
-                            (networkMagic options)
+                            setupNetworkMagic
                             n2cSocket
                             setupStartingPoint
                             setCheckpoint

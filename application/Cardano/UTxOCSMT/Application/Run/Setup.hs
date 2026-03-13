@@ -37,7 +37,9 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     ( MainTraces (..)
     )
 import Cardano.UTxOCSMT.Bootstrap.Genesis
-    ( genesisSecurityParam
+    ( genesisEpochSlots
+    , genesisNetworkMagic
+    , genesisSecurityParam
     , genesisStabilityWindow
     , genesisUtxoPairs
     , readByronGenesisUtxoPairs
@@ -59,6 +61,7 @@ import Database.KV.Transaction (iterating)
 import Database.KV.Transaction qualified as L
 import Database.RocksDB (BatchOp, ColumnFamily)
 import Ouroboros.Network.Block qualified as Network
+import Ouroboros.Network.Magic (NetworkMagic)
 import Ouroboros.Network.Point (WithOrigin (..))
 
 {- | Result of database setup containing the starting point
@@ -73,6 +76,10 @@ data SetupResult = SetupResult
     -- ^ Security parameter k from genesis
     , setupStabilityWindow :: Word64
     -- ^ Stability window in slots: @ceiling(3k\/f)@
+    , setupNetworkMagic :: NetworkMagic
+    -- ^ Network magic derived from shelley-genesis.json
+    , setupEpochSlots :: Word64
+    -- ^ Byron epoch slots derived from genesis (10 * k)
     }
 
 {- | Set up the database, potentially bootstrapping from genesis.
@@ -128,7 +135,7 @@ setupDB
         mCheckpoint <- transact $ getBaseCheckpoint decodePoint
         case mCheckpoint of
             Just point -> do
-                (k, sw, _) <- loadGenesis
+                (k, sw, magic, es, _) <- loadGenesis
                 trace $ NotEmpty point
                 return
                     SetupResult
@@ -136,6 +143,8 @@ setupDB
                         , setupIsGenesis = False
                         , setupSecurityParam = k
                         , setupStabilityWindow = sw
+                        , setupNetworkMagic = magic
+                        , setupEpochSlots = es
                         }
             Nothing -> do
                 new <- checkEmptyRollbacks runner
@@ -151,6 +160,8 @@ setupDB
             :: IO
                 ( Word64
                 , Word64
+                , NetworkMagic
+                , Word64
                 , [(LazyByteString, LazyByteString)]
                 )
         loadGenesis = do
@@ -158,6 +169,8 @@ setupDB
             pure
                 ( genesisSecurityParam g
                 , genesisStabilityWindow g
+                , genesisNetworkMagic g
+                , genesisEpochSlots g
                 , genesisUtxoPairs g
                 )
 
@@ -166,7 +179,7 @@ setupDB
 
         regularSetup = do
             setup (contra New) runner armageddonParams
-            (k, sw, shelleyPairs) <- loadGenesis
+            (k, sw, magic, es, shelleyPairs) <- loadGenesis
             -- Load Byron genesis UTxOs
             byronPairs <- case mByronGenesisFile of
                 Just path -> readByronGenesisUtxoPairs path
@@ -188,6 +201,8 @@ setupDB
                     , setupIsGenesis = True
                     , setupSecurityParam = k
                     , setupStabilityWindow = sw
+                    , setupNetworkMagic = magic
+                    , setupEpochSlots = es
                     }
 
 {- | Check if the rollbacks column family is empty.
