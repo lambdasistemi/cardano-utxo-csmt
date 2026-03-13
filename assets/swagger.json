@@ -1,0 +1,459 @@
+{
+    "definitions": {
+        "BootstrapPhase": {
+            "description": "Current bootstrap phase: downloading, counting, extracting, syncing_headers, rolling_back, or synced",
+            "enum": [
+                "downloading",
+                "counting",
+                "extracting",
+                "syncing_headers",
+                "rolling_back",
+                "synced"
+            ],
+            "type": "string"
+        },
+        "ExtractionProgress": {
+            "description": "Progress of UTxO extraction from Mithril snapshot",
+            "properties": {
+                "current": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "eta": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "percent": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "rate": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "total": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "current",
+                "rate"
+            ],
+            "type": "object"
+        },
+        "HeaderSyncProgress": {
+            "description": "Progress of header synchronization after Mithril import",
+            "properties": {
+                "currentSlot": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "targetSlot": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "currentSlot",
+                "targetSlot"
+            ],
+            "type": "object"
+        },
+        "InclusionProofResponse": {
+            "description": "Current inclusion proof and output for the given transaction input.",
+            "properties": {
+                "merkleRoot": {
+                    "type": "string"
+                },
+                "proof": {
+                    "type": "string"
+                },
+                "txId": {
+                    "type": "string"
+                },
+                "txIx": {
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "txOut": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "txId",
+                "txIx",
+                "txOut",
+                "proof"
+            ],
+            "type": "object"
+        },
+        "MerkleRootEntry": {
+            "description": "A merkle root entry at a given slot",
+            "properties": {
+                "blockHash": {
+                    "type": "string"
+                },
+                "merkleRoot": {
+                    "type": "string"
+                },
+                "slotNo": {
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "slotNo",
+                "blockHash",
+                "merkleRoot"
+            ],
+            "type": "object"
+        },
+        "Metrics": {
+            "description": "Metrics about CSMT operations and blockchain synchronization",
+            "properties": {
+                "averageQueueLength": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgBlockDecodeDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgCSMTDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgFinalityDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgRollbackDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgTotalBlockDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "avgTransactionDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "baseCheckpoint": {
+                    "type": "string"
+                },
+                "blockSpeed": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "bootstrapPhase": {
+                    "$ref": "#/definitions/BootstrapPhase"
+                },
+                "chainTipSlot": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "countingProgress": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "cumulativeBlockDecodeDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeBlocks": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "cumulativeCSMTDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeFinalityDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalCsmtOps": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalQueryTip": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeInternalRollbackStore": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeRollbackDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeTotalBlockDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "cumulativeTransactionDuration": {
+                    "format": "double",
+                    "type": "number"
+                },
+                "currentEra": {
+                    "type": "string"
+                },
+                "currentMerkleRoot": {
+                    "type": "string"
+                },
+                "downloadedBytes": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "extractionProgress": {
+                    "$ref": "#/definitions/ExtractionProgress"
+                },
+                "headerSyncProgress": {
+                    "$ref": "#/definitions/HeaderSyncProgress"
+                },
+                "lastBlockPoint": {
+                    "type": "string"
+                },
+                "maxQueueLength": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "utxoChangesCount": {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                },
+                "utxoSpeed": {
+                    "format": "double",
+                    "type": "number"
+                }
+            },
+            "required": [
+                "averageQueueLength",
+                "maxQueueLength",
+                "utxoChangesCount",
+                "lastBlockPoint",
+                "utxoSpeed",
+                "blockSpeed",
+                "currentEra",
+                "currentMerkleRoot",
+                "baseCheckpoint",
+                "chainTipSlot",
+                "bootstrapPhase",
+                "extractionProgress",
+                "headerSyncProgress",
+                "downloadedBytes",
+                "avgCSMTDuration",
+                "avgRollbackDuration",
+                "avgFinalityDuration",
+                "avgBlockDecodeDuration",
+                "avgTransactionDuration",
+                "avgTotalBlockDuration",
+                "countingProgress",
+                "cumulativeBlocks",
+                "cumulativeBlockDecodeDuration",
+                "cumulativeTransactionDuration",
+                "cumulativeCSMTDuration",
+                "cumulativeRollbackDuration",
+                "cumulativeFinalityDuration",
+                "cumulativeTotalBlockDuration",
+                "cumulativeInternalQueryTip",
+                "cumulativeInternalCsmtOps",
+                "cumulativeInternalRollbackStore"
+            ],
+            "type": "object"
+        },
+        "ReadyResponse": {
+            "description": "Sync readiness status for orchestration",
+            "properties": {
+                "processedSlot": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "slotsBehind": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "tipSlot": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
+                }
+            },
+            "required": [
+                "ready",
+                "tipSlot",
+                "processedSlot",
+                "slotsBehind"
+            ],
+            "type": "object"
+        },
+        "UTxOByAddressEntry": {
+            "description": "A UTxO entry with CBOR-encoded TxIn and TxOut in base16",
+            "properties": {
+                "txIn": {
+                    "type": "string"
+                },
+                "txOut": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "txIn",
+                "txOut"
+            ],
+            "type": "object"
+        }
+    },
+    "info": {
+        "description": "An HTTP service that exposes a Compact Sparse Merkle Tree (CSMT) data structure over the current UTxO set of the Cardano blockchain. This API provides metrics about the CSMT operations.",
+        "license": {
+            "name": "Apache 2.0"
+        },
+        "title": "Cardano UTxO CSMT API",
+        "version": "0.1.0.0"
+    },
+    "paths": {
+        "/merkle-roots": {
+            "get": {
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/MerkleRootEntry"
+                            },
+                            "type": "array"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/Metrics"
+                        }
+                    }
+                }
+            }
+        },
+        "/proof/{txId}/{txIx}": {
+            "get": {
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "txId",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "path",
+                        "maximum": 65535,
+                        "minimum": 0,
+                        "name": "txIx",
+                        "required": true,
+                        "type": "integer"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/InclusionProofResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `txIx` or `txId`"
+                    }
+                }
+            }
+        },
+        "/ready": {
+            "get": {
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ReadyResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/utxos-by-address/{address}": {
+            "get": {
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "address",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "items": {
+                                "$ref": "#/definitions/UTxOByAddressEntry"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `address`"
+                    }
+                }
+            }
+        }
+    },
+    "swagger": "2.0"
+}
