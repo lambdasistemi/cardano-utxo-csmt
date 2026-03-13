@@ -39,9 +39,6 @@ import Cardano.UTxOCSMT.Application.Run.Setup
     , setupDB
     )
 import Control.Tracer (nullTracer)
-import Ouroboros.Network.Magic
-    ( NetworkMagic (..)
-    )
 import System.FilePath ((</>))
 import System.IO.Temp
     ( withSystemTempDirectory
@@ -60,9 +57,6 @@ genesisDir = "e2e-test/genesis"
 shelleyGenesisPath :: FilePath
 shelleyGenesisPath =
     genesisDir </> "shelley-genesis.json"
-
-devnetMagic :: NetworkMagic
-devnetMagic = NetworkMagic 42
 
 spec :: Spec
 spec = describe "Genesis chain sync" $ do
@@ -84,6 +78,8 @@ spec = describe "Genesis chain sync" $ do
                                             prisms
                                     SetupResult
                                         { setupStartingPoint
+                                        , setupNetworkMagic
+                                        , setupEpochSlots
                                         } <-
                                         setupDB
                                             nullTracer
@@ -107,8 +103,8 @@ spec = describe "Genesis chain sync" $ do
                                         timeout
                                             15_000_000
                                             $ applicationN2C
-                                                (EpochSlots 4320)
-                                                devnetMagic
+                                                (EpochSlots setupEpochSlots)
+                                                setupNetworkMagic
                                                 socketPath
                                                 setupStartingPoint
                                                 (\_ -> pure ())

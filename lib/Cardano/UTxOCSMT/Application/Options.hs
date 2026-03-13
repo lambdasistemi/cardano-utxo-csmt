@@ -6,10 +6,6 @@ module Cardano.UTxOCSMT.Application.Options
     , CardanoNetwork (..)
     , optionsParser
     , optionsParserCore
-
-      -- * Derived option accessors
-    , networkMagic
-    , epochSlotsFor
     )
 where
 
@@ -45,7 +41,6 @@ import OptEnvConf
     , value
     , withYamlConfig
     )
-import Ouroboros.Network.Magic (NetworkMagic (..))
 import Path (Abs, File, Path)
 
 -- | Cardano network selection
@@ -63,20 +58,6 @@ instance HasCodec CardanoNetwork where
 instance HasCodec PortNumber where
     codec =
         dimapCodec fromIntegral (fromIntegral :: PortNumber -> Word16) codec
-
--- | Get network magic for a Cardano network
-networkMagicFor :: CardanoNetwork -> NetworkMagic
-networkMagicFor Mainnet = NetworkMagic 764824073
-networkMagicFor Preprod = NetworkMagic 1
-networkMagicFor Preview = NetworkMagic 2
-networkMagicFor Devnet = NetworkMagic 42
-
--- | Get Byron epoch slots for a Cardano network
-epochSlotsFor :: CardanoNetwork -> Word64
-epochSlotsFor Mainnet = 21600
-epochSlotsFor Preprod = 21600
-epochSlotsFor Preview = 4320
-epochSlotsFor Devnet = 4320
 
 -- | How to connect to a Cardano node
 data ConnectionMode
@@ -107,10 +88,6 @@ data Options = Options
     , byronGenesisFile :: Maybe FilePath
     -- ^ Path to byron-genesis.json for bootstrap from genesis
     }
-
--- | Get effective network magic from options
-networkMagic :: Options -> NetworkMagic
-networkMagic = networkMagicFor . network
 
 -- | Option to specify a YAML configuration file
 configFileOption :: Parser (Maybe (Path Abs File))
@@ -164,8 +141,8 @@ networkOption =
         , conf "network"
         , help
             "Cardano network (mainnet, preprod, preview, devnet). \
-            \Sets network magic and default peer node. \
-            \Use devnet for local Yaci DevKit networks (magic 42)."
+            \Used for default peer node selection. Network magic \
+            \and epoch slots are derived from the genesis file."
         , metavar "NETWORK"
         , reader $ maybeReader readCardanoNetwork
         , value Mainnet

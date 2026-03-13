@@ -11,6 +11,8 @@ module Cardano.UTxOCSMT.Bootstrap.Genesis
     ( readShelleyGenesis
     , genesisSecurityParam
     , genesisStabilityWindow
+    , genesisNetworkMagic
+    , genesisEpochSlots
     , genesisUtxoPairs
     , readByronGenesisUtxoPairs
     )
@@ -55,6 +57,7 @@ import Data.Coerce (coerce)
 import Data.ListMap (unListMap)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
+import Ouroboros.Network.Magic (NetworkMagic (..))
 
 {- | Read and parse a Shelley genesis JSON file.
 Patches @systemStart@ if set to @\"PLACEHOLDER\"@.
@@ -93,6 +96,25 @@ genesisStabilityWindow genesis =
   where
     k = genesisSecurityParam genesis
     f = unboundRational (sgActiveSlotsCoeff genesis)
+
+{- | Extract network magic from Shelley genesis.
+
+The @networkMagic@ field in shelley-genesis.json identifies
+the network (e.g. 764824073 for mainnet, 1 for preprod,
+2 for preview).
+-}
+genesisNetworkMagic :: ShelleyGenesis -> NetworkMagic
+genesisNetworkMagic =
+    NetworkMagic . sgNetworkMagic
+
+{- | Derive Byron epoch slots from the security parameter.
+
+Byron epoch length is @10 * k@ slots where @k@ is the
+security parameter from shelley-genesis.json.
+-}
+genesisEpochSlots :: ShelleyGenesis -> Word64
+genesisEpochSlots genesis =
+    10 * genesisSecurityParam genesis
 
 {- | Extract genesis UTxO pairs as CBOR-encoded (TxIn, TxOut).
 Each initial fund entry becomes a pseudo-TxIn (derived from the
