@@ -540,7 +540,7 @@ renderPrometheus m =
         gauge
             "ready"
             "Service readiness (1=ready, 0=not ready)"
-            ( case bootstrapPhase metrics of
+            ( case syncPhase metrics of
                 Just Synced -> 1
                 _ -> 0
             )
