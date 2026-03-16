@@ -26,6 +26,7 @@ module Cardano.UTxOCSMT.Application.Metrics
     , HeaderSyncProgress (..)
     , renderBlockPoint
     , renderPoint
+    , renderPrometheus
     )
 where
 
@@ -39,6 +40,7 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
     , MetricsParams (..)
     , renderBlockPoint
     , renderPoint
+    , renderPrometheus
     , _BaseCheckpointEvent
     , _BlockDecodeDurationEvent
     , _BlockFetchEvent

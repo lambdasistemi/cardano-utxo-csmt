@@ -5,7 +5,8 @@ Description : REST API type definitions for UTxO CSMT service
 This module defines the Servant API types and data structures for
 the HTTP service endpoints:
 
-* @GET /metrics@ - Current synchronization metrics
+* @GET /metrics@ - Current synchronization metrics (JSON)
+* @GET /metrics/prometheus@ - Metrics in Prometheus exposition format
 * @GET /merkle-roots@ - Historical merkle roots by slot
 * @GET /proof/:txId/:txIx@ - Inclusion proof for a specific UTxO
 * @GET /ready@ - Sync readiness status for orchestration
@@ -45,7 +46,14 @@ import Data.Text.Encoding qualified as Text
 import Data.Word (Word16, Word64)
 import GHC.IsList (IsList (..))
 import Ouroboros.Network.Block (SlotNo (..))
-import Servant (Capture, Get, JSON, type (:<|>), type (:>))
+import Servant
+    ( Capture
+    , Get
+    , JSON
+    , PlainText
+    , type (:<|>)
+    , type (:>)
+    )
 import Servant.Swagger.UI (SwaggerSchemaUI)
 
 -- | Type alias for API documentation endpoint
@@ -58,7 +66,10 @@ docs = Proxy
 -- | Type alias for the API
 type API =
     "metrics"
-        :> Get '[JSON] Metrics
+        :> "prometheus"
+        :> Get '[PlainText] Text
+        :<|> "metrics"
+            :> Get '[JSON] Metrics
         :<|> "merkle-roots"
             :> Get '[JSON] [MerkleRootEntry]
         :<|> "proof"
