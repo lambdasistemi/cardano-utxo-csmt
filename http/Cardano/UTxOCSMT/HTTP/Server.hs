@@ -6,7 +6,10 @@ module Cardano.UTxOCSMT.HTTP.Server
     )
 where
 
-import Cardano.UTxOCSMT.Application.Metrics (Metrics)
+import Cardano.UTxOCSMT.Application.Metrics
+    ( Metrics
+    , renderPrometheus
+    )
 import Cardano.UTxOCSMT.HTTP.API
     ( API
     , InclusionProofResponse
@@ -49,7 +52,8 @@ apiServer
     -> IO ReadyResponse
     -> Server API
 apiServer getMetrics getMerkleRoots getProof getByAddress getReady =
-    metricsHandler
+    prometheusHandler
+        :<|> metricsHandler
         :<|> merkleRootsHandler
         :<|> proofHandler
         :<|> byAddressHandler
@@ -58,6 +62,10 @@ apiServer getMetrics getMerkleRoots getProof getByAddress getReady =
     metricsHandler = do
         r <- liftIO getMetrics
         maybe (throwError err404) return r
+
+    prometheusHandler = do
+        r <- liftIO getMetrics
+        maybe (throwError err404) (return . renderPrometheus) r
 
     -- \| Check sync status and return 503 if not ready
     requireSynced :: Handler a -> Handler a
