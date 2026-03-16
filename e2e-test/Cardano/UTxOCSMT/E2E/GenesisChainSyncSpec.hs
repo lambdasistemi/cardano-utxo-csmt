@@ -108,7 +108,6 @@ spec = describe "Genesis chain sync" $ do
                                                 socketPath
                                                 setupStartingPoint
                                                 (\_ -> pure ())
-                                                Nothing
                                                 nullTracer
                                                 nullTracer
                                                 state

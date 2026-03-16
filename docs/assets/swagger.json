@@ -1,73 +1,5 @@
 {
     "definitions": {
-        "BootstrapPhase": {
-            "description": "Current bootstrap phase: downloading, counting, extracting, syncing_headers, rolling_back, or synced",
-            "enum": [
-                "downloading",
-                "counting",
-                "extracting",
-                "syncing_headers",
-                "rolling_back",
-                "synced"
-            ],
-            "type": "string"
-        },
-        "ExtractionProgress": {
-            "description": "Progress of UTxO extraction from Mithril snapshot",
-            "properties": {
-                "current": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                },
-                "eta": {
-                    "format": "double",
-                    "type": "number"
-                },
-                "percent": {
-                    "format": "double",
-                    "type": "number"
-                },
-                "rate": {
-                    "format": "double",
-                    "type": "number"
-                },
-                "total": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                }
-            },
-            "required": [
-                "current",
-                "rate"
-            ],
-            "type": "object"
-        },
-        "HeaderSyncProgress": {
-            "description": "Progress of header synchronization after Mithril import",
-            "properties": {
-                "currentSlot": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                },
-                "targetSlot": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                }
-            },
-            "required": [
-                "currentSlot",
-                "targetSlot"
-            ],
-            "type": "object"
-        },
         "InclusionProofResponse": {
             "description": "Current inclusion proof and output for the given transaction input.",
             "properties": {
@@ -157,16 +89,7 @@
                     "format": "double",
                     "type": "number"
                 },
-                "bootstrapPhase": {
-                    "$ref": "#/definitions/BootstrapPhase"
-                },
                 "chainTipSlot": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                },
-                "countingProgress": {
                     "format": "int64",
                     "maximum": 1.8446744073709551615e19,
                     "minimum": 0,
@@ -219,18 +142,6 @@
                 "currentMerkleRoot": {
                     "type": "string"
                 },
-                "downloadedBytes": {
-                    "format": "int64",
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
-                },
-                "extractionProgress": {
-                    "$ref": "#/definitions/ExtractionProgress"
-                },
-                "headerSyncProgress": {
-                    "$ref": "#/definitions/HeaderSyncProgress"
-                },
                 "lastBlockPoint": {
                     "type": "string"
                 },
@@ -238,6 +149,9 @@
                     "maximum": 9223372036854775807,
                     "minimum": -9223372036854775808,
                     "type": "integer"
+                },
+                "syncPhase": {
+                    "$ref": "#/definitions/SyncPhase"
                 },
                 "utxoChangesCount": {
                     "maximum": 9223372036854775807,
@@ -260,17 +174,13 @@
                 "currentMerkleRoot",
                 "baseCheckpoint",
                 "chainTipSlot",
-                "bootstrapPhase",
-                "extractionProgress",
-                "headerSyncProgress",
-                "downloadedBytes",
+                "syncPhase",
                 "avgCSMTDuration",
                 "avgRollbackDuration",
                 "avgFinalityDuration",
                 "avgBlockDecodeDuration",
                 "avgTransactionDuration",
                 "avgTotalBlockDuration",
-                "countingProgress",
                 "cumulativeBlocks",
                 "cumulativeBlockDecodeDuration",
                 "cumulativeTransactionDuration",
@@ -316,6 +226,14 @@
                 "slotsBehind"
             ],
             "type": "object"
+        },
+        "SyncPhase": {
+            "description": "Current synchronization phase: syncing or synced",
+            "enum": [
+                "syncing",
+                "synced"
+            ],
+            "type": "string"
         },
         "UTxOByAddressEntry": {
             "description": "A UTxO entry with CBOR-encoded TxIn and TxOut in base16",

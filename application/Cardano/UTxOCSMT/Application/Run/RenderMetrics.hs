@@ -1,5 +1,3 @@
-{-# LANGUAGE NumericUnderscores #-}
-
 module Cardano.UTxOCSMT.Application.Run.RenderMetrics
     ( renderMetrics
     )
@@ -7,15 +5,10 @@ where
 
 import CSMT ()
 import Cardano.UTxOCSMT.Application.Metrics
-    ( ExtractionProgress (..)
-    , Metrics (..)
+    ( Metrics (..)
     , renderBlockPoint
     )
 import Data.Maybe (fromMaybe)
-import Data.Time.Clock (secondsToDiffTime)
-import Data.Time.Format (defaultTimeLocale, formatTime)
-import Data.Time.LocalTime (TimeOfDay, timeToTimeOfDay)
-import Data.Word (Word64)
 import Ouroboros.Network.Block (blockNo)
 import System.Console.ANSI (hClearScreen, hSetCursorPosition)
 import System.IO (stdout)
@@ -32,10 +25,7 @@ renderMetrics
         , blockSpeed
         , currentEra
         , currentMerkleRoot
-        , bootstrapPhase
-        , extractionProgress
-        , downloadedBytes
-        , countingProgress
+        , syncPhase
         , avgCSMTDuration
         , avgRollbackDuration
         , avgFinalityDuration
@@ -46,14 +36,8 @@ renderMetrics
         hClearScreen stdout
         hSetCursorPosition stdout 0 0
         putStrLn
-            $ "Bootstrap Phase: "
-                ++ maybe "N/A" show bootstrapPhase
-                ++ "\nDownload Progress: "
-                ++ renderDownloadProgress downloadedBytes
-                ++ "\nCounting Progress: "
-                ++ renderCountingProgress countingProgress
-                ++ "\nExtraction Progress: "
-                ++ renderExtractionProgress extractionProgress
+            $ "Sync Phase: "
+                ++ maybe "N/A" show syncPhase
                 ++ "\nAverage Queue Length: "
                 ++ show averageQueueLength
                 ++ "\nMax Queue Length: "
@@ -92,35 +76,3 @@ renderMetrics
                 ++ "\nAvg Total Block: "
                 ++ printf "%.0f" avgTotalBlockDuration
                 ++ " μs"
-
-renderDownloadProgress :: Maybe Word64 -> String
-renderDownloadProgress Nothing = "N/A"
-renderDownloadProgress (Just bytes) =
-    show (bytes `div` 1_000_000) ++ " MB"
-
-renderCountingProgress :: Maybe Word64 -> String
-renderCountingProgress Nothing = "N/A"
-renderCountingProgress (Just count) =
-    show count ++ " UTxOs counted"
-
-renderExtractionProgress :: Maybe ExtractionProgress -> String
-renderExtractionProgress Nothing = "N/A"
-renderExtractionProgress (Just ExtractionProgress{..}) =
-    show extractionCurrent
-        ++ " / "
-        ++ maybe "?" show extractionTotal
-        ++ " ("
-        ++ maybe "?" (printf "%.1f") extractionPercent
-        ++ "%)"
-        ++ " @ "
-        ++ printf "%.0f" extractionRate
-        ++ " UTxO/s"
-        ++ " - ETA: "
-        ++ maybe "?" formatEta extractionEta
-
-formatEta :: Double -> String
-formatEta seconds =
-    formatTime defaultTimeLocale "%H:%M:%S" tod
-  where
-    tod :: TimeOfDay
-    tod = timeToTimeOfDay $ secondsToDiffTime $ round seconds

@@ -32,8 +32,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , renderUpdateTrace
     )
 import Cardano.UTxOCSMT.Application.Metrics
-    ( BootstrapPhase (..)
-    , MetricsEvent (..)
+    ( MetricsEvent (..)
+    , SyncPhase (..)
     )
 import Cardano.UTxOCSMT.Application.Run.Application
     ( ApplicationTrace (..)
@@ -158,7 +158,7 @@ stealMetricsEvent (Update (UpdateTransactMeasured _ secs)) =
 stealMetricsEvent (NotEmpty point) =
     Just $ BaseCheckpointEvent point
 stealMetricsEvent (Application (ApplicationRollingBack _)) =
-    Just $ BootstrapPhaseEvent RollingBack
+    Just $ SyncPhaseEvent Syncing
 stealMetricsEvent _ = Nothing
 
 {- | Match high-frequency events for throttling.

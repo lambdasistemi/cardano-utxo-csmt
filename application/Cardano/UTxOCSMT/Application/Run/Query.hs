@@ -35,8 +35,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , queryMerkleRoot
     )
 import Cardano.UTxOCSMT.Application.Metrics
-    ( BootstrapPhase (..)
-    , Metrics (..)
+    ( Metrics (..)
+    , SyncPhase (..)
     )
 import Cardano.UTxOCSMT.Application.Run.Config (context)
 import Cardano.UTxOCSMT.Application.UTxOs (unsafeMkTxIn)
@@ -194,14 +194,14 @@ mkReadyResponse threshold mMetrics =
                 , processedSlot = Nothing
                 , slotsBehind = Nothing
                 }
-        Just Metrics{chainTipSlot, lastBlockPoint, bootstrapPhase} ->
+        Just Metrics{chainTipSlot, lastBlockPoint, syncPhase} ->
             let tip = unSlotNo <$> chainTipSlot
                 processed = getProcessedSlot lastBlockPoint
                 -- Handle case where processed > tip due to protocol timing
                 -- (headers can arrive before tip is updated). When this
                 -- happens, we're synced so slotsBehind is 0.
                 behind = safeSub <$> tip <*> processed
-                isSynced = bootstrapPhase == Just Synced
+                isSynced = syncPhase == Just Synced
                 isReady =
                     isSynced && case behind of
                         Just b -> b <= threshold
