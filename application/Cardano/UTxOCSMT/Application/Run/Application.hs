@@ -44,7 +44,7 @@ import Cardano.UTxOCSMT.Ouroboros.Types
     )
 import Control.Exception (throwIO)
 import Control.Monad (replicateM_)
-import Control.Tracer (Tracer (..), contramap)
+import Control.Tracer (Tracer (..))
 import Data.ByteString.Lazy (ByteString)
 import Data.Function (fix)
 import Data.Tracer.TraceWith
