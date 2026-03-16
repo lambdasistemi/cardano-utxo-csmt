@@ -6,16 +6,14 @@ Description : Data types for metrics collection
 
 This module defines the core data types used for metrics collection:
 
-* 'BootstrapPhase' - phases during application startup
+* 'SyncPhase' - current synchronization phase
 * 'MetricsEvent' - events that update metrics state
-* 'ExtractionProgress' - progress of UTxO extraction
-* 'HeaderSyncProgress' - progress of header synchronization
 * 'Metrics' - the aggregated metrics state
 * 'MetricsParams' - configuration for metrics collection
 -}
 module Cardano.UTxOCSMT.Application.Metrics.Types
-    ( -- * Bootstrap phases
-      BootstrapPhase (..)
+    ( -- * Sync phases
+      SyncPhase (..)
 
       -- * Metrics events
     , MetricsEvent (..)
@@ -25,12 +23,7 @@ module Cardano.UTxOCSMT.Application.Metrics.Types
     , _MerkleRootEvent
     , _BaseCheckpointEvent
     , _ChainTipEvent
-    , _BootstrapPhaseEvent
-    , _ExtractionTotalEvent
-    , _ExtractionProgressEvent
-    , _HeaderSyncProgressEvent
-    , _DownloadProgressEvent
-    , _CountingProgressEvent
+    , _SyncPhaseEvent
     , _CSMTDurationEvent
     , _RollbackDurationEvent
     , _FinalityDurationEvent
@@ -40,10 +33,6 @@ module Cardano.UTxOCSMT.Application.Metrics.Types
     , _InternalQueryTipEvent
     , _InternalCsmtOpsEvent
     , _InternalRollbackStoreEvent
-
-      -- * Progress types
-    , ExtractionProgress (..)
-    , HeaderSyncProgress (..)
 
       -- * Metrics state
     , Metrics (..)
@@ -86,48 +75,31 @@ import Ouroboros.Network.Block (SlotNo (..), blockPoint)
 import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
--- | Bootstrap phase during startup
-data BootstrapPhase
-    = -- | Downloading Mithril snapshot
-      Downloading
-    | -- | Counting UTxOs in snapshot
-      Counting
-    | -- | Extracting UTxOs from Mithril snapshot
-      Extracting
-    | -- | Syncing headers after Mithril import
-      SyncingHeaders
-    | -- | Rolling back due to chain reorganization
-      RollingBack
+-- | Current synchronization phase
+data SyncPhase
+    = -- | Catching up with the chain
+      Syncing
     | -- | Fully synced with chain tip
       Synced
     deriving (Show, Eq)
 
-instance ToJSON BootstrapPhase where
+instance ToJSON SyncPhase where
     toJSON = \case
-        Downloading -> "downloading"
-        Counting -> "counting"
-        Extracting -> "extracting"
-        SyncingHeaders -> "syncing_headers"
-        RollingBack -> "rolling_back"
+        Syncing -> "syncing"
         Synced -> "synced"
 
-instance ToSchema BootstrapPhase where
+instance ToSchema SyncPhase where
     declareNamedSchema _ =
         return
-            $ Swagger.NamedSchema (Just "BootstrapPhase")
+            $ Swagger.NamedSchema (Just "SyncPhase")
             $ mempty
             & Swagger.type_ ?~ Swagger.SwaggerString
             & Swagger.enum_
-                ?~ [ "downloading"
-                   , "counting"
-                   , "extracting"
-                   , "syncing_headers"
-                   , "rolling_back"
+                ?~ [ "syncing"
                    , "synced"
                    ]
             & description
-                ?~ "Current bootstrap phase: downloading, counting, \
-                   \extracting, syncing_headers, rolling_back, or synced"
+                ?~ "Current synchronization phase: syncing or synced"
 
 -- | The signal we receive to update the metrics
 data MetricsEvent
@@ -143,18 +115,8 @@ data MetricsEvent
       BaseCheckpointEvent Point
     | -- | the current chain tip slot from ChainSync
       ChainTipEvent SlotNo
-    | -- | current bootstrap phase
-      BootstrapPhaseEvent BootstrapPhase
-    | -- | extraction total (from decoded ledger state)
-      ExtractionTotalEvent Word64
-    | -- | extraction progress (UTxOs extracted so far)
-      ExtractionProgressEvent Word64
-    | -- | header sync progress (current slot, target slot)
-      HeaderSyncProgressEvent SlotNo SlotNo
-    | -- | download progress (bytes downloaded so far)
-      DownloadProgressEvent Word64
-    | -- | counting progress (UTxOs counted so far)
-      CountingProgressEvent Word64
+    | -- | current sync phase
+      SyncPhaseEvent SyncPhase
     | -- | CSMT operation duration (seconds)
       CSMTDurationEvent Double
     | -- | Rollback point storage duration (seconds)
@@ -177,92 +139,6 @@ data MetricsEvent
 
 makePrisms ''MetricsEvent
 
--- | Progress of UTxO extraction from Mithril snapshot
-data ExtractionProgress = ExtractionProgress
-    { extractionCurrent :: Word64
-    -- ^ Number of UTxOs extracted so far
-    , extractionTotal :: Maybe Word64
-    -- ^ Total number of UTxOs to extract (if known)
-    , extractionPercent :: Maybe Double
-    -- ^ Percentage complete (if total is known)
-    , extractionRate :: Double
-    -- ^ Extraction rate (UTxOs per second)
-    , extractionEta :: Maybe Double
-    -- ^ Estimated seconds remaining (if total and rate are known)
-    }
-    deriving (Show, Eq)
-
-instance ToJSON ExtractionProgress where
-    toJSON
-        ExtractionProgress
-            { extractionCurrent
-            , extractionTotal
-            , extractionPercent
-            , extractionRate
-            , extractionEta
-            } =
-            object
-                [ "current" .= extractionCurrent
-                , "total" .= extractionTotal
-                , "percent" .= extractionPercent
-                , "rate" .= extractionRate
-                , "eta" .= extractionEta
-                ]
-
-instance ToSchema ExtractionProgress where
-    declareNamedSchema _ = do
-        word64Schema <- declareSchemaRef (Proxy @Word64)
-        maybeWord64Schema <- declareSchemaRef (Proxy @(Maybe Word64))
-        maybeDoubleSchema <- declareSchemaRef (Proxy @(Maybe Double))
-        doubleSchema <- declareSchemaRef (Proxy @Double)
-        return
-            $ Swagger.NamedSchema (Just "ExtractionProgress")
-            $ mempty
-            & Swagger.type_ ?~ Swagger.SwaggerObject
-            & properties
-                .~ fromList
-                    [ ("current", word64Schema)
-                    , ("total", maybeWord64Schema)
-                    , ("percent", maybeDoubleSchema)
-                    , ("rate", doubleSchema)
-                    , ("eta", maybeDoubleSchema)
-                    ]
-            & required .~ ["current", "rate"]
-            & description
-                ?~ "Progress of UTxO extraction from Mithril snapshot"
-
--- | Progress of header synchronization after Mithril import
-data HeaderSyncProgress = HeaderSyncProgress
-    { headerCurrentSlot :: SlotNo
-    -- ^ Current slot being processed
-    , headerTargetSlot :: SlotNo
-    -- ^ Target slot to reach
-    }
-    deriving (Show, Eq)
-
-instance ToJSON HeaderSyncProgress where
-    toJSON HeaderSyncProgress{headerCurrentSlot, headerTargetSlot} =
-        object
-            [ "currentSlot" .= unSlotNo headerCurrentSlot
-            , "targetSlot" .= unSlotNo headerTargetSlot
-            ]
-
-instance ToSchema HeaderSyncProgress where
-    declareNamedSchema _ = do
-        word64Schema <- declareSchemaRef (Proxy @Word64)
-        return
-            $ Swagger.NamedSchema (Just "HeaderSyncProgress")
-            $ mempty
-            & Swagger.type_ ?~ Swagger.SwaggerObject
-            & properties
-                .~ fromList
-                    [ ("currentSlot", word64Schema)
-                    , ("targetSlot", word64Schema)
-                    ]
-            & required .~ ["currentSlot", "targetSlot"]
-            & description
-                ?~ "Progress of header synchronization after Mithril import"
-
 -- | Tracked metrics
 data Metrics = Metrics
     { averageQueueLength :: Double
@@ -276,16 +152,8 @@ data Metrics = Metrics
     , baseCheckpoint :: Maybe Point
     , chainTipSlot :: Maybe SlotNo
     -- ^ The current chain tip slot from ChainSync protocol
-    , bootstrapPhase :: Maybe BootstrapPhase
-    -- ^ Current bootstrap phase during startup
-    , extractionProgress :: Maybe ExtractionProgress
-    -- ^ Progress of UTxO extraction from Mithril snapshot
-    , headerSyncProgress :: Maybe HeaderSyncProgress
-    -- ^ Progress of header synchronization after Mithril import
-    , downloadedBytes :: Maybe Word64
-    -- ^ Bytes downloaded during Mithril snapshot download
-    , countingProgress :: Maybe Word64
-    -- ^ UTxOs counted so far during counting phase
+    , syncPhase :: Maybe SyncPhase
+    -- ^ Current synchronization phase
     , avgCSMTDuration :: Double
     -- ^ Average CSMT operation duration in microseconds
     , avgRollbackDuration :: Double
@@ -334,11 +202,7 @@ instance ToJSON Metrics where
             , currentMerkleRoot
             , baseCheckpoint
             , chainTipSlot
-            , bootstrapPhase
-            , extractionProgress
-            , headerSyncProgress
-            , downloadedBytes
-            , countingProgress
+            , syncPhase
             , avgCSMTDuration
             , avgRollbackDuration
             , avgFinalityDuration
@@ -365,14 +229,12 @@ instance ToJSON Metrics where
                 , "utxoSpeed" .= utxoSpeed
                 , "blockSpeed" .= blockSpeed
                 , "currentEra" .= currentEra
-                , "currentMerkleRoot" .= fmap (Text.pack . show) currentMerkleRoot
-                , "baseCheckpoint" .= fmap (Text.pack . renderPoint) baseCheckpoint
+                , "currentMerkleRoot"
+                    .= fmap (Text.pack . show) currentMerkleRoot
+                , "baseCheckpoint"
+                    .= fmap (Text.pack . renderPoint) baseCheckpoint
                 , "chainTipSlot" .= fmap unSlotNo chainTipSlot
-                , "bootstrapPhase" .= bootstrapPhase
-                , "extractionProgress" .= extractionProgress
-                , "headerSyncProgress" .= headerSyncProgress
-                , "downloadedBytes" .= downloadedBytes
-                , "countingProgress" .= countingProgress
+                , "syncPhase" .= syncPhase
                 , "avgCSMTDuration" .= avgCSMTDuration
                 , "avgRollbackDuration" .= avgRollbackDuration
                 , "avgFinalityDuration" .= avgFinalityDuration
@@ -420,12 +282,8 @@ instance ToSchema Metrics where
         intSchema <- declareSchemaRef (Proxy @Int)
         maybeStringSchema <- declareSchemaRef (Proxy @(Maybe String))
         maybeWord64Schema <- declareSchemaRef (Proxy @(Maybe Word64))
-        maybeBootstrapPhaseSchema <-
-            declareSchemaRef (Proxy @(Maybe BootstrapPhase))
-        maybeExtractionProgressSchema <-
-            declareSchemaRef (Proxy @(Maybe ExtractionProgress))
-        maybeHeaderSyncProgressSchema <-
-            declareSchemaRef (Proxy @(Maybe HeaderSyncProgress))
+        maybeSyncPhaseSchema <-
+            declareSchemaRef (Proxy @(Maybe SyncPhase))
         return
             $ Swagger.NamedSchema (Just "Metrics")
             $ mempty
@@ -442,11 +300,7 @@ instance ToSchema Metrics where
                     , ("currentMerkleRoot", maybeStringSchema)
                     , ("baseCheckpoint", maybeStringSchema)
                     , ("chainTipSlot", maybeWord64Schema)
-                    , ("bootstrapPhase", maybeBootstrapPhaseSchema)
-                    , ("extractionProgress", maybeExtractionProgressSchema)
-                    , ("headerSyncProgress", maybeHeaderSyncProgressSchema)
-                    , ("downloadedBytes", maybeWord64Schema)
-                    , ("countingProgress", maybeWord64Schema)
+                    , ("syncPhase", maybeSyncPhaseSchema)
                     , ("avgCSMTDuration", doubleSchema)
                     , ("avgRollbackDuration", doubleSchema)
                     , ("avgFinalityDuration", doubleSchema)
@@ -499,17 +353,13 @@ instance ToSchema Metrics where
                    , "currentMerkleRoot"
                    , "baseCheckpoint"
                    , "chainTipSlot"
-                   , "bootstrapPhase"
-                   , "extractionProgress"
-                   , "headerSyncProgress"
-                   , "downloadedBytes"
+                   , "syncPhase"
                    , "avgCSMTDuration"
                    , "avgRollbackDuration"
                    , "avgFinalityDuration"
                    , "avgBlockDecodeDuration"
                    , "avgTransactionDuration"
                    , "avgTotalBlockDuration"
-                   , "countingProgress"
                    , "cumulativeBlocks"
                    , "cumulativeBlockDecodeDuration"
                    , "cumulativeTransactionDuration"
@@ -522,7 +372,8 @@ instance ToSchema Metrics where
                    , "cumulativeInternalRollbackStore"
                    ]
             & description
-                ?~ "Metrics about CSMT operations and blockchain synchronization"
+                ?~ "Metrics about CSMT operations and blockchain \
+                   \synchronization"
 
 -- | Metrics configuration parameters
 data MetricsParams = MetricsParams

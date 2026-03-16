@@ -11,7 +11,6 @@ import Cardano.Chain.Slotting (EpochSlots)
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength
     , Fetched (..)
-    , HeaderSkipProgress (..)
     , mkBlockFetchApplication
     )
 import Cardano.UTxOCSMT.Application.ChainSync
@@ -26,8 +25,8 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , Update (..)
     )
 import Cardano.UTxOCSMT.Application.Metrics
-    ( BootstrapPhase (..)
-    , MetricsEvent (..)
+    ( MetricsEvent (..)
+    , SyncPhase (Synced)
     )
 import Cardano.UTxOCSMT.Application.UTxOs
     ( Change (..)
@@ -44,11 +43,10 @@ import Cardano.UTxOCSMT.Ouroboros.Types
     , ProgressOrRewind (..)
     )
 import Control.Exception (throwIO)
-import Control.Monad (replicateM_, when)
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Monad (replicateM_)
+import Control.Tracer (Tracer (..), contramap)
 import Data.ByteString.Lazy (ByteString)
 import Data.Function (fix)
-import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Tracer.TraceWith
     ( contra
     , trace
@@ -56,7 +54,6 @@ import Data.Tracer.TraceWith
     , pattern TraceWith
     )
 import Data.Void (Void)
-import Data.Word (Word64)
 import Ouroboros.Consensus.Block (getHeader)
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Block qualified as Network
@@ -75,8 +72,6 @@ data ApplicationTrace
       ApplicationRollingBack Point
     | -- | Block processed at slot with tx count and UTxO change count
       ApplicationBlockProcessed SlotNo Int Int
-    | -- | Header sync progress during Mithril catch-up
-      ApplicationHeaderSkipProgress HeaderSkipProgress
     deriving (Show)
 
 -- | Render an 'ApplicationTrace'
@@ -95,29 +90,9 @@ renderApplicationTrace (ApplicationBlockProcessed slot txCount utxoCount) =
         ++ " txs, "
         ++ show utxoCount
         ++ " UTxO changes"
-renderApplicationTrace (ApplicationHeaderSkipProgress progress) =
-    "Syncing headers: slot "
-        ++ show (unSlotNo $ skipCurrentSlot progress)
-        ++ " / "
-        ++ show (unSlotNo $ skipTargetSlot progress)
 
 origin :: Network.Point block
 origin = Network.Point{getPoint = Origin}
-
--- | Create a tracer that only emits progress events every N slots
-throttleBySlot
-    :: Word64
-    -- ^ Slot interval between logs
-    -> Tracer IO HeaderSkipProgress
-    -> IO (Tracer IO HeaderSkipProgress)
-throttleBySlot interval baseTracer = do
-    lastSlotRef <- newIORef 0
-    pure $ Tracer $ \progress -> do
-        let SlotNo currentSlot = skipCurrentSlot progress
-        lastSlot <- readIORef lastSlotRef
-        when (currentSlot >= lastSlot + interval) $ do
-            writeIORef lastSlotRef currentSlot
-            traceWith baseTracer progress
 
 type DBState = State IO Point ByteString ByteString
 
@@ -228,8 +203,6 @@ application
     -- ^ Headers queue size
     -> (Point -> IO ())
     -- ^ Action to set the base checkpoint
-    -> Maybe SlotNo
-    -- ^ Optional skip until slot for Mithril bootstrap
     -> Tracer IO MetricsEvent
     -- ^ Tracer for metrics events
     -> Tracer IO ApplicationTrace
@@ -247,7 +220,6 @@ application
     startingPoint
     headersQueueSize
     setCheckpoint
-    mSkipTargetSlot
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     initialDBUpdate
@@ -257,29 +229,17 @@ application
 
             let counting = metricTrace UTxOChangeEvent
 
-                -- Tracer that emits to both app trace and metrics
-                metricsSkipTracer = Tracer
-                    $ \HeaderSkipProgress{skipCurrentSlot, skipTargetSlot} ->
-                        metricTrace
-                            $ HeaderSyncProgressEvent
-                                skipCurrentSlot
-                                skipTargetSlot
-                appSkipTracer = contramap ApplicationHeaderSkipProgress tracer
-
-            skipProgressTracer <-
-                throttleBySlot 1000 (appSkipTracer <> metricsSkipTracer)
-
-            let onSkipComplete =
-                    metricTrace $ BootstrapPhaseEvent Synced
+                onSynced =
+                    metricTrace $ SyncPhaseEvent Synced
 
             (blockFetchApplication, headerIntersector) <-
                 mkBlockFetchApplication
                     headersQueueSize
                     (metricContra BlockFetchEvent)
-                    skipProgressTracer
+                    (Tracer $ const $ pure ())
                     setCheckpoint
-                    onSkipComplete
-                    mSkipTargetSlot
+                    onSynced
+                    Nothing
                     $ intersector tracer counting
                     $ Syncing initialDBUpdate
             let chainFollowingApplication =
@@ -303,8 +263,11 @@ application
             case result of
                 Left err -> throwIO err
                 Right (Left ()) ->
-                    error "application: chain following application exited unexpectedly"
-                Right _ -> error "application: impossible branch reached"
+                    error
+                        "application: chain following application \
+                        \exited unexpectedly"
+                Right _ ->
+                    error "application: impossible branch reached"
 
 -- | N2C variant: connects via Unix socket, no BlockFetch needed
 applicationN2C
@@ -318,8 +281,6 @@ applicationN2C
     -- ^ Starting point
     -> (Point -> IO ())
     -- ^ Action to set the base checkpoint
-    -> Maybe SlotNo
-    -- ^ Optional skip until slot for Mithril bootstrap
     -> Tracer IO MetricsEvent
     -- ^ Tracer for metrics events
     -> Tracer IO ApplicationTrace
@@ -335,7 +296,6 @@ applicationN2C
     socketPath
     startingPoint
     setCheckpoint
-    mSkipTargetSlot
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     initialDBUpdate
@@ -345,19 +305,8 @@ applicationN2C
 
             let counting = metricTrace UTxOChangeEvent
 
-                metricsSkipTracer = Tracer
-                    $ \HeaderSkipProgress{skipCurrentSlot, skipTargetSlot} ->
-                        metricTrace
-                            $ HeaderSyncProgressEvent
-                                skipCurrentSlot
-                                skipTargetSlot
-                appSkipTracer = contramap ApplicationHeaderSkipProgress tracer
-
-            skipProgressTracer <-
-                throttleBySlot 1000 (appSkipTracer <> metricsSkipTracer)
-
-            let onSkipComplete =
-                    metricTrace $ BootstrapPhaseEvent Synced
+                onSynced =
+                    metricTrace $ SyncPhaseEvent Synced
 
                 blockIntersector =
                     intersector tracer counting
@@ -372,10 +321,10 @@ applicationN2C
                     mkN2CChainSyncApplication
                         (metricContra (BlockInfoEvent . getHeader))
                         (metricContra ChainTipEvent)
-                        skipProgressTracer
+                        (Tracer $ const $ pure ())
                         setCheckpoint
-                        onSkipComplete
-                        mSkipTargetSlot
+                        onSynced
+                        Nothing
                         blockIntersector
                         points
 

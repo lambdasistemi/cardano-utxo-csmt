@@ -26,9 +26,9 @@ import Cardano.UTxOCSMT.Application.Database.RocksDB
     , newRunRocksDBTransaction
     )
 import Cardano.UTxOCSMT.Application.Metrics
-    ( BootstrapPhase (..)
-    , MetricsEvent (..)
+    ( MetricsEvent (..)
     , MetricsParams (..)
+    , SyncPhase (..)
     , metricsTracer
     )
 import Cardano.UTxOCSMT.Application.Options
@@ -211,7 +211,7 @@ main = withUtf8 $ do
                     case pointSlot blockPoint of
                         At blockSlot
                             | blockSlot >= chainTipSlot ->
-                                traceWith metricsEvent $ BootstrapPhaseEvent Synced
+                                traceWith metricsEvent $ SyncPhaseEvent Synced
                         _ -> pure ()
                 isAtTip blockPoint chainTipSlot =
                     case pointSlot blockPoint of
@@ -252,7 +252,7 @@ main = withUtf8 $ do
 
             -- Log before starting the application
             trace ApplicationStarting
-            traceWith metricsEvent $ BootstrapPhaseEvent Synced
+            traceWith metricsEvent $ SyncPhaseEvent Synced
 
             let epochSlots =
                     EpochSlots setupEpochSlots
@@ -267,7 +267,6 @@ main = withUtf8 $ do
                             setupStartingPoint
                             headersQueueSize
                             setCheckpoint
-                            Nothing
                             metricsEvent
                             (contra Application)
                             state
@@ -279,7 +278,6 @@ main = withUtf8 $ do
                             n2cSocket
                             setupStartingPoint
                             setCheckpoint
-                            Nothing
                             metricsEvent
                             (contra Application)
                             state

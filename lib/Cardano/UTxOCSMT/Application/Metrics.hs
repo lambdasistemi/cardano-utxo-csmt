@@ -21,9 +21,7 @@ module Cardano.UTxOCSMT.Application.Metrics
     , MetricsEvent (..)
     , MetricsParams (..)
     , Metrics (..)
-    , BootstrapPhase (..)
-    , ExtractionProgress (..)
-    , HeaderSyncProgress (..)
+    , SyncPhase (..)
     , renderBlockPoint
     , renderPoint
     , renderPrometheus
@@ -32,12 +30,10 @@ where
 
 import CSMT.Hashes (Hash)
 import Cardano.UTxOCSMT.Application.Metrics.Types
-    ( BootstrapPhase (..)
-    , ExtractionProgress (..)
-    , HeaderSyncProgress (..)
-    , Metrics (..)
+    ( Metrics (..)
     , MetricsEvent (..)
     , MetricsParams (..)
+    , SyncPhase (..)
     , renderBlockPoint
     , renderPoint
     , renderPrometheus
@@ -45,20 +41,15 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
     , _BlockDecodeDurationEvent
     , _BlockFetchEvent
     , _BlockInfoEvent
-    , _BootstrapPhaseEvent
     , _CSMTDurationEvent
     , _ChainTipEvent
-    , _CountingProgressEvent
-    , _DownloadProgressEvent
-    , _ExtractionProgressEvent
-    , _ExtractionTotalEvent
     , _FinalityDurationEvent
-    , _HeaderSyncProgressEvent
     , _InternalCsmtOpsEvent
     , _InternalQueryTipEvent
     , _InternalRollbackStoreEvent
     , _MerkleRootEvent
     , _RollbackDurationEvent
+    , _SyncPhaseEvent
     , _TotalBlockDurationEvent
     , _TransactionDurationEvent
     , _UTxOChangeEvent
@@ -95,7 +86,6 @@ import Data.Profunctor (Profunctor (..))
 import Data.SOP.Strict (index_NS)
 import Data.Time (UTCTime)
 import Data.Tracer.Timestamp (Timestamped (..), utcTimestampTracer)
-import Data.Word (Word64)
 import Ouroboros.Consensus.HardFork.Combinator (OneEraHeader (..))
 import Ouroboros.Consensus.HardFork.Combinator qualified as HF
 import Ouroboros.Network.Block (SlotNo (..))
@@ -182,55 +172,9 @@ getBaseCheckpoint = handles (timestampedEventL . _BaseCheckpointEvent) Fold.last
 chainTipSlotFold :: Fold TimestampedMetrics (Maybe SlotNo)
 chainTipSlotFold = handles (timestampedEventL . _ChainTipEvent) Fold.last
 
--- track bootstrap phase
-bootstrapPhaseFold :: Fold TimestampedMetrics (Maybe BootstrapPhase)
-bootstrapPhaseFold = handles (timestampedEventL . _BootstrapPhaseEvent) Fold.last
-
--- track extraction progress with rate calculation
-extractionProgressFold
-    :: Int -> Fold TimestampedMetrics (Maybe ExtractionProgress)
-extractionProgressFold window =
-    combine
-        <$> handles (timestampedEventL . _ExtractionTotalEvent) Fold.last
-        <*> handles (timestampedEventL . _ExtractionProgressEvent) Fold.last
-        <*> speedOfSomeEvent window _ExtractionProgressEvent
-  where
-    combine _ Nothing _ = Nothing
-    combine mTotal (Just current) rate =
-        Just
-            ExtractionProgress
-                { extractionCurrent = current
-                , extractionTotal = mTotal
-                , extractionPercent = calcPercent current <$> mTotal
-                , extractionRate = rate
-                , extractionEta = calcEta current rate <$> mTotal
-                }
-    calcPercent current total =
-        (fromIntegral current / fromIntegral total) * 100
-    calcEta current rate total
-        | rate > 0 = fromIntegral (total - current) / rate
-        | otherwise = 0
-
--- track header sync progress
-headerSyncProgressFold
-    :: Fold TimestampedMetrics (Maybe HeaderSyncProgress)
-headerSyncProgressFold =
-    handles (timestampedEventL . _HeaderSyncProgressEvent)
-        $ lmap toProgress Fold.last
-  where
-    toProgress (current, target) =
-        HeaderSyncProgress
-            { headerCurrentSlot = current
-            , headerTargetSlot = target
-            }
-
--- track download progress (bytes downloaded)
-downloadProgressFold :: Fold TimestampedMetrics (Maybe Word64)
-downloadProgressFold = handles (timestampedEventL . _DownloadProgressEvent) Fold.last
-
--- track counting progress (UTxOs counted so far)
-countingProgressFold :: Fold TimestampedMetrics (Maybe Word64)
-countingProgressFold = handles (timestampedEventL . _CountingProgressEvent) Fold.last
+-- track sync phase
+syncPhaseFold :: Fold TimestampedMetrics (Maybe SyncPhase)
+syncPhaseFold = handles (timestampedEventL . _SyncPhaseEvent) Fold.last
 
 -- | Average duration in microseconds over a window.
 avgDurationFold
@@ -283,11 +227,7 @@ metricsFold MetricsParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
         <*> getCurrentMerkleRoot
         <*> getBaseCheckpoint
         <*> chainTipSlotFold
-        <*> bootstrapPhaseFold
-        <*> extractionProgressFold utxoSpeedWindow
-        <*> headerSyncProgressFold
-        <*> downloadProgressFold
-        <*> countingProgressFold
+        <*> syncPhaseFold
         <*> avgDurationFold blockSpeedWindow _CSMTDurationEvent
         <*> avgDurationFold blockSpeedWindow _RollbackDurationEvent
         <*> avgDurationFold blockSpeedWindow _FinalityDurationEvent
