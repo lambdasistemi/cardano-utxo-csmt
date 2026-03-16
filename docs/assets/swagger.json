@@ -376,6 +376,21 @@
                 }
             }
         },
+        "/metrics/prometheus": {
+            "get": {
+                "produces": [
+                    "text/plain;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/proof/{txId}/{txIx}": {
             "get": {
                 "parameters": [
