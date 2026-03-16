@@ -302,6 +302,7 @@ test-suite unit-tests
     , contra-tracer
     , contra-tracer-contrib
     , directory
+    , foldl
     , hspec
     , http-client
     , http-client-tls
@@ -336,6 +337,7 @@ test-suite unit-tests
     Cardano.UTxOCSMT.Application.Database.RocksDBSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
+    Control.Foldl.ExtraSpec
     Data.List.SampleFibonacciSpec
     Data.Tracer.ThrottleSpec
 
