@@ -22,6 +22,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     )
 where
 
+import CSMT.MTS (CommonOps (..), Ops (..), journalEmptyT)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams
     , ArmageddonTrace
@@ -39,7 +40,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
     , RunTransaction (..)
-    , journalEmpty
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -48,11 +48,13 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , Update (..)
     )
 import Control.Monad (forM, forM_)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
 import Data.List.SampleFibonacci
     ( sampleAtFibonacciIntervals
     )
+import MTS.Interface (Mode (..))
 
 import Data.Monoid (Sum (..))
 
@@ -340,31 +342,31 @@ Start in KVOnly mode unless the journal is empty AND the database
 already has rollback points (meaning a previous KVOnly phase
 completed and replayed successfully). A fresh empty database
 starts in KVOnly mode.
+
+Uses the 'Ops' GADT from MTS for automatic journal replay
+and mode transitions.
 -}
 newSplitState
     :: ( Ord key
        , Ord slot
        , Show slot
        , MonadFail m
+       , MonadIO m
        )
     => Tracer m (UpdateTrace slot hash)
     -> ForwardOps
     -> Bool
     -- ^ Is this a fresh (genesis) database?
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
+    -> Ops
+        'KVOnly
+        m
+        cf
+        (Columns slot hash key value)
+        op
         key
         value
         hash
-    -- ^ KVOnly ops (phase 1)
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
-        key
-        value
-        hash
-    -- ^ Full ops (phase 2)
-    -> m ()
-    -- ^ Replay callback
+    -- ^ KVOnly ops with built-in replay and transition
     -> (slot -> TipOf slot -> Bool)
     -- ^ Tip detection predicate
     -> (slot -> hash)
@@ -387,9 +389,7 @@ newSplitState
     tw@TraceWith{tracer, trace}
     forwardOps
     isGenesis
-    kvOps
-    fullOps
-    replay
+    ops
     isAtTip
     slotHash
     onForward
@@ -405,39 +405,50 @@ newSplitState
                         sampleRollbackPoints
                 rollbackCount <-
                     Store.countPoints RollbackPoints
-                empty <- journalEmpty
+                empty <- journalEmptyT JournalCol
                 pure (cps, rollbackCount, empty)
         trace $ UpdateNewState cps
-        let update =
-                if empty && not isGenesis
-                    then
-                        mkUpdate
-                            tracer
-                            forwardOps
-                            fullOps
-                            slotHash
-                            onForward
-                            armageddonParams
-                            runTransaction
-                            securityParam
-                            saveCheckpoint
-                            rollbackCount
-                    else
-                        mkSplitUpdate
-                            tw
-                            forwardOps
-                            kvOps
-                            fullOps
-                            replay
-                            isAtTip
-                            slotHash
-                            onForward
-                            armageddonParams
-                            runTransaction
-                            securityParam
-                            saveCheckpoint
-                            rollbackCount
-        pure (update, cps)
+        if empty && not isGenesis
+            then do
+                -- Transition to Full immediately (replay is
+                -- a no-op since journal is empty)
+                mFull <- liftIO (toFull ops)
+                case mFull of
+                    Just fullOps -> do
+                        let csmtOps = fullOpsToCSMTOps fullOps
+                        pure
+                            ( mkUpdate
+                                tracer
+                                forwardOps
+                                csmtOps
+                                slotHash
+                                onForward
+                                armageddonParams
+                                runTransaction
+                                securityParam
+                                saveCheckpoint
+                                rollbackCount
+                            , cps
+                            )
+                    Nothing ->
+                        fail
+                            "newSplitState: toFull failed"
+            else
+                pure
+                    ( mkSplitUpdate
+                        tw
+                        forwardOps
+                        ops
+                        isAtTip
+                        slotHash
+                        onForward
+                        armageddonParams
+                        runTransaction
+                        securityParam
+                        saveCheckpoint
+                        rollbackCount
+                    , cps
+                    )
 
 -- | Apply forward tip.
 forwardTip
@@ -731,31 +742,29 @@ mkUpdate
 {- | Two-phase update: starts in KVOnly mode, switches to Full
 after replaying the journal on first tip-touch.
 
-The follower is blocked during replay (forwardTipApply runs
-synchronously), making the transition atomic w.r.t. chain sync.
+Uses the 'Ops' GADT's 'toFull' for automatic journal replay
+and mode transition. The follower is blocked during replay
+(forwardTipApply runs synchronously).
 -}
 mkSplitUpdate
     :: ( Ord key
        , Ord slot
        , Show slot
        , MonadFail m
+       , MonadIO m
        )
     => Tracer m (UpdateTrace slot hash)
     -> ForwardOps
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
+    -> Ops
+        'KVOnly
+        m
+        cf
+        (Columns slot hash key value)
+        op
         key
         value
         hash
-    -- ^ KVOnly ops (phase 1)
-    -> CSMTOps
-        (Transaction m cf (Columns slot hash key value) op)
-        key
-        value
-        hash
-    -- ^ Full ops (phase 2)
-    -> m ()
-    -- ^ Replay callback
+    -- ^ KVOnly ops with built-in replay and transition
     -> (slot -> TipOf slot -> Bool)
     -- ^ Tip detection predicate
     -> (slot -> hash)
@@ -780,9 +789,7 @@ mkSplitUpdate
 mkSplitUpdate
     tw@TraceWith{contra, trace}
     forwardOps
-    kvOps
-    fullOps
-    replay
+    ops
     isAtTip
     slotHash
     onForward
@@ -792,6 +799,7 @@ mkSplitUpdate
     saveCheckpoint =
         goKVOnly
       where
+        kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)
         goKVOnly count =
             Update
                 { forwardTipApply =
@@ -803,7 +811,7 @@ mkSplitUpdate
                                     forwardTip
                                         tw
                                         kvOnlyForwardOps
-                                        kvOps
+                                        kvCSMTOps
                                         (slotHash slot)
                                         count
                                         slot
@@ -826,8 +834,19 @@ mkSplitUpdate
                         if isAtTip slot chainTip
                             then do
                                 trace UpdateJournalReplay
-                                replay
-                                pure $ goFull count'
+                                mFull <-
+                                    liftIO (toFull ops)
+                                case mFull of
+                                    Just fullOps ->
+                                        pure
+                                            $ goFull
+                                                ( fullOpsToCSMTOps
+                                                    fullOps
+                                                )
+                                                count'
+                                    Nothing ->
+                                        fail
+                                            "mkSplitUpdate: toFull failed"
                             else
                                 pure
                                     $ goKVOnly count'
@@ -845,7 +864,7 @@ mkSplitUpdate
                                         Store.rollbackTo
                                             RollbackPoints
                                             ( rollbackRollbackPoint
-                                                kvOps
+                                                kvCSMTOps
                                             )
                                             (At s)
                         case r of
@@ -865,11 +884,11 @@ mkSplitUpdate
                             $ Syncing
                             $ goKVOnly 0
                 }
-        goFull =
+        goFull fullCSMTOps =
             mkUpdate
                 tw
                 forwardOps
-                fullOps
+                fullCSMTOps
                 slotHash
                 onForward
                 armageddonParams
@@ -881,6 +900,33 @@ mkSplitUpdate
                 (contra UpdateArmageddon)
                 runTransaction
                 armageddonParams
+
+-- | Convert KVOnly 'CommonOps' to 'CSMTOps' (root hash always 'Nothing').
+kvCommonToCSMTOps
+    :: (Monad m)
+    => CommonOps m cf d ops k v
+    -> CSMTOps (Transaction m cf d ops) k v a
+kvCommonToCSMTOps CommonOps{opsInsert, opsDelete} =
+    CSMTOps
+        { csmtInsert = opsInsert
+        , csmtDelete = opsDelete
+        , csmtRootHash = pure Nothing
+        }
+
+-- | Convert 'Full' 'Ops' to 'CSMTOps'.
+fullOpsToCSMTOps
+    :: Ops 'Full m cf d ops k v a
+    -> CSMTOps (Transaction m cf d ops) k v a
+fullOpsToCSMTOps
+    OpsFull
+        { fullCommon = CommonOps{opsInsert, opsDelete}
+        , opsRootHash
+        } =
+        CSMTOps
+            { csmtInsert = opsInsert
+            , csmtDelete = opsDelete
+            , csmtRootHash = opsRootHash
+            }
 
 {- | Wrap a tracer with duration measurement for
 CSMT ops and rollback point storage.

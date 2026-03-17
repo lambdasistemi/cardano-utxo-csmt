@@ -19,6 +19,7 @@ module Cardano.UTxOCSMT.Application.Database.RocksDB
     )
 where
 
+import CSMT.MTS (Ops)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonParams
     , setup
@@ -46,6 +47,8 @@ import Cardano.UTxOCSMT.Application.Database.Interface
 import Control.Monad (when)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (MonadIO)
+import MTS.Interface (Mode (..))
+
 import Control.Tracer (Tracer, nullTracer)
 import Data.Maybe (isNothing)
 import Database.KV.Cursor (firstEntry)
@@ -209,9 +212,11 @@ createUpdateState
 {- | Create split-mode Update state from an existing runner.
 
 Starts in KVOnly mode if journal is non-empty, otherwise Full.
+Uses the 'Ops' GADT for automatic journal replay and transitions.
 -}
 createSplitUpdateState
     :: ( MonadFail m
+       , MonadIO m
        , Ord key
        , Ord slot
        , Show slot
@@ -220,20 +225,16 @@ createSplitUpdateState
     -> ForwardOps
     -> Bool
     -- ^ Whether the DB was freshly initialized (genesis)
-    -> CSMTOps
-        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
+    -> Ops
+        'KVOnly
+        m
+        ColumnFamily
+        (Columns slot hash key value)
+        BatchOp
         key
         value
         hash
-    -- ^ KVOnly ops
-    -> CSMTOps
-        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
-        key
-        value
-        hash
-    -- ^ Full ops
-    -> m ()
-    -- ^ Replay callback
+    -- ^ KVOnly ops with built-in replay and transition
     -> (slot -> TipOf slot -> Bool)
     -- ^ Tip detection predicate
     -> (slot -> hash)
@@ -256,9 +257,7 @@ createSplitUpdateState
     tracer
     forwardOps
     isGenesis
-    kvOps
-    fullOps
-    replay
+    ops
     isAtTip
     slotHash
     onForward
@@ -271,9 +270,7 @@ createSplitUpdateState
             tracer
             forwardOps
             isGenesis
-            kvOps
-            fullOps
-            replay
+            ops
             isAtTip
             slotHash
             onForward

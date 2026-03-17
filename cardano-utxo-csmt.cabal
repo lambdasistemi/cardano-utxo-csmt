@@ -209,6 +209,7 @@ library library
     , lens
     , memory
     , mtl
+    , mts
     , mts:csmt
     , mts:rollbacks
     , network
