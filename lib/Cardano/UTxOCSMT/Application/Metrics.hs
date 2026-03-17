@@ -1,25 +1,18 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE NumericUnderscores #-}
-
 {- |
 Module      : Cardano.UTxOCSMT.Application.Metrics
 Description : Real-time metrics collection for chain synchronization
 
-This module provides a metrics collection system that tracks:
+This module provides a metrics fold that accumulates trace events into
+a 'Metrics' snapshot. The fold is designed for use with 'foldTracer'
+from contra-tracer-contrib.
 
-* Block fetch queue statistics
-* UTxO change processing speed
-* Block processing speed
-* Current blockchain era
-* Current Merkle root
-* Chain tip slot (for sync status detection)
-
-Metrics are collected via a 'Tracer' and can be output at configurable intervals.
+@
+pipeline <- foldTracer metricsFold downstream
+@
 -}
 module Cardano.UTxOCSMT.Application.Metrics
-    ( metricsTracer
+    ( metricsFold
     , MetricsEvent (..)
-    , MetricsParams (..)
     , Metrics (..)
     , SyncPhase (..)
     , renderBlockPoint
@@ -32,7 +25,6 @@ import CSMT.Hashes (Hash)
 import Cardano.UTxOCSMT.Application.Metrics.Types
     ( Metrics (..)
     , MetricsEvent (..)
-    , MetricsParams (..)
     , SyncPhase (..)
     , renderBlockPoint
     , renderPoint
@@ -55,19 +47,6 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
     , _UTxOChangeEvent
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Header, Point)
-import Control.Comonad (Comonad (..))
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (async, link)
-import Control.Concurrent.Class.MonadSTM.Strict
-    ( MonadSTM (..)
-    , flushTQueue
-    , newTQueueIO
-    , newTVarIO
-    , readTVar
-    , readTVarIO
-    , writeTQueue
-    , writeTVar
-    )
 import Control.Foldl (Fold (..), handles)
 import Control.Foldl qualified as Fold
 import Control.Foldl.Extra (averageOverWindow, speedoMeter)
@@ -80,12 +59,10 @@ import Control.Lens
     , to
     , _Wrapped
     )
-import Control.Monad (forever, (<=<))
-import Control.Tracer (Tracer (..))
 import Data.Profunctor (Profunctor (..))
 import Data.SOP.Strict (index_NS)
 import Data.Time (UTCTime)
-import Data.Tracer.Timestamp (Timestamped (..), utcTimestampTracer)
+import Data.Tracer.Timestamp (Timestamped (..))
 import Ouroboros.Consensus.HardFork.Combinator (OneEraHeader (..))
 import Ouroboros.Consensus.HardFork.Combinator qualified as HF
 import Ouroboros.Network.Block (SlotNo (..))
@@ -163,22 +140,28 @@ currentEraFold =
         _ -> "unknown"
 
 getCurrentMerkleRoot :: Fold TimestampedMetrics (Maybe Hash)
-getCurrentMerkleRoot = handles (timestampedEventL . _MerkleRootEvent) Fold.last
+getCurrentMerkleRoot =
+    handles (timestampedEventL . _MerkleRootEvent) Fold.last
 
 getBaseCheckpoint :: Fold TimestampedMetrics (Maybe Point)
-getBaseCheckpoint = handles (timestampedEventL . _BaseCheckpointEvent) Fold.last
+getBaseCheckpoint =
+    handles (timestampedEventL . _BaseCheckpointEvent) Fold.last
 
 -- track the chain tip slot
 chainTipSlotFold :: Fold TimestampedMetrics (Maybe SlotNo)
-chainTipSlotFold = handles (timestampedEventL . _ChainTipEvent) Fold.last
+chainTipSlotFold =
+    handles (timestampedEventL . _ChainTipEvent) Fold.last
 
 -- track sync phase
 syncPhaseFold :: Fold TimestampedMetrics (Maybe SyncPhase)
-syncPhaseFold = handles (timestampedEventL . _SyncPhaseEvent) Fold.last
+syncPhaseFold =
+    handles (timestampedEventL . _SyncPhaseEvent) Fold.last
 
 -- | Average duration in microseconds over a window.
 avgDurationFold
-    :: Int -> APrism' MetricsEvent Double -> Fold TimestampedMetrics Double
+    :: Int
+    -> APrism' MetricsEvent Double
+    -> Fold TimestampedMetrics Double
 avgDurationFold window prism =
     handles
         (timestampedEventL . clonePrism prism . to secsToMicros)
@@ -189,7 +172,8 @@ avgDurationFold window prism =
 
 -- | Cumulative sum of durations in microseconds.
 cumulativeDurationFold
-    :: APrism' MetricsEvent Double -> Fold TimestampedMetrics Double
+    :: APrism' MetricsEvent Double
+    -> Fold TimestampedMetrics Double
 cumulativeDurationFold prism =
     handles
         (timestampedEventL . clonePrism prism . to secsToMicros)
@@ -213,9 +197,33 @@ countEventFold
 countEventFold prism =
     handles (timestampedEventL . clonePrism prism) Fold.genericLength
 
--- track the whole set of metrics
-metricsFold :: MetricsParams -> Fold TimestampedMetrics Metrics
-metricsFold MetricsParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
+{- | Metrics fold configuration.
+
+Controls the sliding window sizes for various metrics.
+-}
+data MetricsFoldParams = MetricsFoldParams
+    { qlWindow :: Int
+    , utxoSpeedWindow :: Int
+    , blockSpeedWindow :: Int
+    }
+
+-- | Default metrics fold parameters.
+defaultMetricsFoldParams :: MetricsFoldParams
+defaultMetricsFoldParams =
+    MetricsFoldParams
+        { qlWindow = 100
+        , utxoSpeedWindow = 1000
+        , blockSpeedWindow = 100
+        }
+
+-- | Accumulate timestamped metrics events into a 'Metrics' snapshot.
+metricsFold :: Fold TimestampedMetrics Metrics
+metricsFold = metricsFoldWith defaultMetricsFoldParams
+
+-- | Accumulate with custom window parameters.
+metricsFoldWith
+    :: MetricsFoldParams -> Fold TimestampedMetrics Metrics
+metricsFoldWith MetricsFoldParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
     Metrics
         <$> averageBlockFetchLength qlWindow
         <*> maxBlockFetchQueueLength
@@ -244,29 +252,3 @@ metricsFold MetricsParams{qlWindow, utxoSpeedWindow, blockSpeedWindow} =
         <*> cumulativeUsFold _InternalQueryTipEvent
         <*> cumulativeUsFold _InternalCsmtOpsEvent
         <*> cumulativeUsFold _InternalRollbackStoreEvent
-
--- | Create a metrics tracer that collects metrics and outputs them
-metricsTracer :: MetricsParams -> IO (Tracer IO MetricsEvent)
-metricsTracer params@MetricsParams{metricsFrequency, metricsOutput} = do
-    eventsQ <- newTQueueIO -- unbounded or we risk to slow down the application
-    -- shared state for metrics accumulation
-    metricsV <- newTVarIO $ metricsFold params
-    link <=< async $ forever $ do
-        -- let events accumulate, no need to load CPU as they come with timestamps
-        threadDelay 100_000
-        (es, currentFold) <- atomically $ do
-            es <- flushTQueue eventsQ
-            currentFold <- readTVar metricsV
-            pure (es, currentFold)
-
-        let !newFold = Fold.fold (duplicate currentFold) es
-        atomically $ writeTVar metricsV newFold
-
-    -- output loop
-    link <=< async $ forever $ do
-        threadDelay metricsFrequency
-        readTVarIO metricsV >>= metricsOutput . extract
-    pure
-        $ utcTimestampTracer
-        $ Tracer
-        $ \msg -> atomically $ writeTQueue eventsQ msg

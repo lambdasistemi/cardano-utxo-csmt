@@ -1,6 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE NumericUnderscores #-}
-
 module Cardano.UTxOCSMT.Application.Run.Main
     ( main
     )
@@ -27,9 +24,8 @@ import Cardano.UTxOCSMT.Application.Database.RocksDB
     )
 import Cardano.UTxOCSMT.Application.Metrics
     ( MetricsEvent (..)
-    , MetricsParams (..)
     , SyncPhase (..)
-    , metricsTracer
+    , metricsFold
     )
 import Cardano.UTxOCSMT.Application.Options
     ( ConnectionMode (..)
@@ -55,9 +51,6 @@ import Cardano.UTxOCSMT.Application.Run.Query
     , queryMerkleRoots
     , queryUTxOsByAddress
     )
-import Cardano.UTxOCSMT.Application.Run.RenderMetrics
-    ( renderMetrics
-    )
 import Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
     , setupDB
@@ -70,17 +63,13 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     )
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
 import Control.Concurrent.Async (async, link)
-import Control.Concurrent.Class.MonadSTM.Strict
-    ( MonadSTM (..)
-    , newTVarIO
-    , readTVarIO
-    , writeTVar
-    )
 import Control.Exception (SomeException, catch, displayException)
-import Control.Monad (when, (<=<))
-import Control.Tracer (Contravariant (..), nullTracer, traceWith)
+import Control.Monad ((<=<))
+import Control.Tracer (Contravariant (..), Tracer (..), traceWith)
 import Data.ByteString.Lazy qualified as BL
+import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Time.Clock (diffUTCTime)
+import Data.Tracer.Fold (foldTracer)
 import Data.Tracer.Intercept (intercept)
 import Data.Tracer.LogFile (logTracer)
 import Data.Tracer.ThreadSafe (newThreadSafeTracer)
@@ -114,6 +103,12 @@ startHTTPService logError traceAction (Just port) runServer = do
         $ runServer port `catch` \(e :: SomeException) -> do
             logError $ "HTTP server crashed: " ++ displayException e
 
+-- | Write each traced value to an IORef before passing downstream.
+shareTracer :: IORef (Maybe a) -> Tracer IO a -> Tracer IO a
+shareTracer ref downstream = Tracer $ \a -> do
+    writeIORef ref (Just a)
+    traceWith downstream a
+
 -- | Main entry point
 main :: IO ()
 main = withUtf8 $ do
@@ -122,7 +117,6 @@ main = withUtf8 $ do
         { dbPath
         , logPath
         , apiPort
-        , metricsOn
         , headersQueueSize
         } <-
         runParser
@@ -130,21 +124,30 @@ main = withUtf8 $ do
             "Tracking cardano UTxOs in a CSMT in a rocksDB database"
             optionsParser
     logTracer logPath $ \basicTracer -> do
-        let appTracer
-                | metricsOn, Nothing <- logPath = nullTracer
-                | otherwise = basicTracer
-        metricsVar <- newTVarIO Nothing
+        let appTracer = basicTracer
+
+        -- IORef for sharing metrics with HTTP (via shareTracer pattern)
+        metricsRef <- newIORef Nothing
+
+        -- Break the circular dependency:
+        -- metricsEvent needs mainTracer (to inject MetricsReport)
+        -- mainTracer needs metricsEvent (for intercept)
+        mainTracerRef <- newIORef (Tracer $ const $ pure ())
+        let feedbackTracer = Tracer $ \a ->
+                readIORef mainTracerRef >>= \t -> traceWith t a
+
+        -- Metrics pipeline: thread-safe → timestamp → fold → share → feedback
+        foldedTracer <-
+            foldTracer
+                metricsFold
+                ( shareTracer metricsRef
+                    $ contramap MetricsReport feedbackTracer
+                )
         metricsEvent <-
-            metricsTracer
-                $ MetricsParams
-                    { qlWindow = 100
-                    , utxoSpeedWindow = 1000
-                    , blockSpeedWindow = 100
-                    , metricsOutput = \ !metrics -> do
-                        when metricsOn $ renderMetrics metrics
-                        atomically $ writeTVar metricsVar (Just metrics)
-                    , metricsFrequency = 1_000_000
-                    }
+            newThreadSafeTracer
+                $ utcTimestampTracer foldedTracer
+
+        -- Main tracer pipeline: intercept → thread-safe → timestamp → throttle → render → log
         TraceWith{tracer, trace, contra} <-
             fmap (intercept metricsEvent stealMetricsEvent) $ do
                 throttled <-
@@ -153,6 +156,9 @@ main = withUtf8 $ do
                         [matchHighFrequencyEvents]
                         (contramap renderThrottledMainTraces appTracer)
                 newThreadSafeTracer $ utcTimestampTracer throttled
+
+        -- Close the loop
+        writeIORef mainTracerRef tracer
         startHTTPService
             (trace . HTTPServiceError)
             (trace ServeDocs)
@@ -172,7 +178,7 @@ main = withUtf8 $ do
 
             let getReadyResponse =
                     mkReadyResponse (syncThreshold options)
-                        <$> readTVarIO metricsVar
+                        <$> readIORef metricsRef
 
             -- Start API server early so /metrics is available during bootstrap
             startHTTPService
@@ -182,7 +188,7 @@ main = withUtf8 $ do
                 $ \port ->
                     runAPIServer
                         port
-                        (readTVarIO metricsVar)
+                        (readIORef metricsRef)
                         (queryMerkleRoots runner)
                         (queryInclusionProof runner)
                         (queryUTxOsByAddress runner)
