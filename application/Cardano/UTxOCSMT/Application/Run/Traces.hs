@@ -89,6 +89,8 @@ data MainTraces
       GenesisBootstrap Int
     | -- | Periodic metrics snapshot from fold accumulator
       MetricsReport Metrics
+    | -- | Journal replay chunk processed (entries in chunk)
+      JournalReplay Int
     deriving (Show)
 
 -- | Render a 'MainTraces' value to a human-readable log string.
@@ -119,6 +121,8 @@ renderMainTraces (GenesisBootstrap n) =
     "Genesis bootstrap: inserted "
         ++ show n
         ++ " UTxOs from genesis file"
+renderMainTraces (JournalReplay n) =
+    "Journal replay: " ++ show n ++ " entries"
 renderMainTraces (MetricsReport m) =
     "blocks="
         ++ show (cumulativeBlocks m)
@@ -190,6 +194,7 @@ matchHighFrequencyEvents = \case
     Update (UpdateRollbackMeasured{}) -> Just 1.0
     Update (UpdateTransactMeasured{}) -> Just 1.0
     MetricsReport{} -> Just 1.0
+    JournalReplay{} -> Just 1.0
     _ -> Nothing
 
 {- | Render a throttled 'MainTraces' value to a log string.

@@ -25,6 +25,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 import Control.Lens (review)
 import Control.Monad (unless)
+import Control.Tracer (Tracer, traceWith)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Maybe (catMaybes, isNothing)
@@ -127,10 +128,13 @@ journalDeleteTag = B.singleton 0x00
 
 {- | Replay all journal entries against the CSMT tree, then
 clear the journal. Processes in chunks of @chunkSize@ entries.
+Traces the number of entries replayed after each chunk.
 -}
 replayJournal
     :: (Monad m, Ord key)
-    => Int
+    => Tracer m Int
+    -- ^ Tracer receiving the count of entries replayed per chunk
+    -> Int
     -- ^ Chunk size
     -> (ByteString -> value)
     -- ^ Deserialize value from journal storage
@@ -138,22 +142,24 @@ replayJournal
     -> Hashing hash
     -> RunTransaction cf op slot hash key value m
     -> m ()
-replayJournal chunkSize deserializeValue fkv h RunTransaction{transact} =
+replayJournal tr chunkSize deserializeValue fkv h RunTransaction{transact} =
     loop
   where
     loop = do
-        done <- transact $ do
+        n <- transact $ do
             entries <- iterating JournalCol $ do
                 me <- firstEntry
                 case me of
                     Nothing -> pure []
                     Just e -> collectN (chunkSize - 1) [e]
             if null entries
-                then pure True
+                then pure 0
                 else do
                     replayEntries fkv h deserializeValue entries
-                    pure False
-        unless done loop
+                    pure (length entries)
+        unless (n == 0) $ do
+            traceWith tr n
+            loop
 
 -- | Collect up to @n@ more cursor entries after the first.
 collectN
