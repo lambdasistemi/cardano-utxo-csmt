@@ -665,7 +665,7 @@ runStressBench nBlocks utxos =
 Writes to KV + journal but does not update the CSMT tree.
 -}
 kvOnlyCSMTOps
-    :: Monad m
+    :: (Monad m, Ord key)
     => (value -> StrictByteString)
     -> CSMTOps
         (Transaction m cf (Columns slot hash key value) op)
