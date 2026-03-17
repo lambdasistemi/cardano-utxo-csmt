@@ -3,17 +3,14 @@ module Cardano.UTxOCSMT.Application.Run.Main
     )
 where
 
-import CSMT.MTS (mkKVOnlyOps)
 import Cardano.Chain.Slotting (EpochSlots (..))
-import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
-    ( Columns (..)
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Query
     ( putBaseCheckpoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
+    , mkCSMTKVOnlyOps
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
@@ -177,13 +174,9 @@ main = withUtf8 $ do
                     db
                     prisms
             let kvOnlyOps =
-                    mkKVOnlyOps
-                        []
+                    mkCSMTKVOnlyOps
                         4
                         1000
-                        KVCol
-                        CSMTCol
-                        JournalCol
                         (iso BL.toStrict BL.fromStrict)
                         fkv
                         h
