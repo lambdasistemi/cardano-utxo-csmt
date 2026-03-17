@@ -34,13 +34,13 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     , setup
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
-    ( Prisms (..)
+    ( Columns (..)
+    , Prisms (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , CSMTOps (..)
     , RunTransaction (..)
-    , kvOnlyCSMTOps
     , mkCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
@@ -69,7 +69,12 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.List (foldl')
 import Data.Monoid (Sum (..))
 import Data.Word (Word64)
-import Database.KV.Transaction (Transaction)
+import Database.KV.Transaction
+    ( Transaction
+    , delete
+    , insert
+    , query
+    )
 import Database.RocksDB
     ( Config (..)
     , withDBCF
@@ -655,3 +660,32 @@ runStressBench nBlocks utxos =
                                     ++ " μs/UTxO"
                             go (i + 1) update'
                 go (1 :: Int) update0
+
+{- | Construct KVOnly 'CSMTOps' for benchmarking.
+Writes to KV + journal but does not update the CSMT tree.
+-}
+kvOnlyCSMTOps
+    :: Monad m
+    => (value -> StrictByteString)
+    -> CSMTOps
+        (Transaction m cf (Columns slot hash key value) op)
+        key
+        value
+        hash
+kvOnlyCSMTOps serializeValue =
+    CSMTOps
+        { csmtInsert = \k v -> do
+            insert KVCol k v
+            insert JournalCol k
+                $ B.singleton 0x01 <> serializeValue v
+        , csmtDelete = \k -> do
+            mv <- query KVCol k
+            case mv of
+                Nothing -> pure ()
+                Just v -> do
+                    delete KVCol k
+                    insert JournalCol k
+                        $ B.singleton 0x00
+                            <> serializeValue v
+        , csmtRootHash = pure Nothing
+        }

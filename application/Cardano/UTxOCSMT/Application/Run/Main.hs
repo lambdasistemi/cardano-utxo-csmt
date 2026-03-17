@@ -3,16 +3,18 @@ module Cardano.UTxOCSMT.Application.Run.Main
     )
 where
 
+import CSMT.MTS (mkKVOnlyOps)
 import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
+    ( Columns (..)
+    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Query
     ( putBaseCheckpoint
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
-    , kvOnlyCSMTOps
     , mkCSMTOps
-    , replayJournal
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( fullForwardOps
@@ -64,6 +66,7 @@ import Cardano.UTxOCSMT.Application.Run.Traces
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
 import Control.Concurrent.Async (async, link)
 import Control.Exception (SomeException, catch, displayException)
+import Control.Lens (iso)
 import Control.Monad ((<=<))
 import Control.Tracer (Contravariant (..), Tracer (..), traceWith)
 import Data.ByteString.Lazy qualified as BL
@@ -168,13 +171,23 @@ main = withUtf8 $ do
         withRocksDB dbPath $ \db -> do
             -- Create runner first (no logging)
             let CSMTContext{fromKV = fkv, hashing = h} = context
-                fullOps = mkCSMTOps fkv h
-                kvOps = kvOnlyCSMTOps BL.toStrict
-                ops = fullOps
+                ops = mkCSMTOps fkv h
             runner <-
                 newRunRocksDBTransaction
                     db
                     prisms
+            let kvOnlyOps =
+                    mkKVOnlyOps
+                        []
+                        4
+                        1000
+                        KVCol
+                        CSMTCol
+                        JournalCol
+                        (iso BL.toStrict BL.fromStrict)
+                        fkv
+                        h
+                        (transact runner)
 
             let getReadyResponse =
                     mkReadyResponse (syncThreshold options)
@@ -225,14 +238,6 @@ main = withUtf8 $ do
                             blockSlot + stabilityWindow
                                 >= chainTipSlot
                         _ -> False
-                replay =
-                    replayJournal
-                        (contra JournalReplay)
-                        1000
-                        BL.fromStrict
-                        fkv
-                        h
-                        runner
             updateTracer <-
                 measureUpdateDurations (contra Update)
             (state, slots) <-
@@ -240,9 +245,7 @@ main = withUtf8 $ do
                     updateTracer
                     fullForwardOps
                     setupIsGenesis
-                    kvOps
-                    fullOps
-                    replay
+                    kvOnlyOps
                     isAtTip
                     slotHash
                     onForward
