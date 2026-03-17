@@ -226,7 +226,13 @@ main = withUtf8 $ do
                                 >= chainTipSlot
                         _ -> False
                 replay =
-                    replayJournal 1000 BL.fromStrict fkv h runner
+                    replayJournal
+                        (contra JournalReplay)
+                        1000
+                        BL.fromStrict
+                        fkv
+                        h
+                        runner
             updateTracer <-
                 measureUpdateDurations (contra Update)
             (state, slots) <-
