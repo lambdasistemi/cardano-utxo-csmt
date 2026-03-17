@@ -3,6 +3,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , mkSplitUpdate
     , newSplitState
 
+      -- * Phase-aware ops selector
+    , Phase (..)
+    , SplitMode (..)
+    , mkSplitMode
+
       -- * Forward operation control
     , ForwardOps (..)
     , fullForwardOps
@@ -47,14 +52,15 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List.SampleFibonacci
     ( sampleAtFibonacciIntervals
     )
-import MTS.Interface (Mode (..))
+import MTS.Interface qualified as MTS (Mode (..))
 
 import Data.Monoid (Sum (..))
 
@@ -358,7 +364,7 @@ newSplitState
     -> Bool
     -- ^ Is this a fresh (genesis) database?
     -> Ops
-        'KVOnly
+        'MTS.KVOnly
         m
         cf
         (Columns slot hash key value)
@@ -756,7 +762,7 @@ mkSplitUpdate
     => Tracer m (UpdateTrace slot hash)
     -> ForwardOps
     -> Ops
-        'KVOnly
+        'MTS.KVOnly
         m
         cf
         (Columns slot hash key value)
@@ -901,6 +907,70 @@ mkSplitUpdate
                 runTransaction
                 armageddonParams
 
+-- | Sync phase for split-mode bootstrap.
+data Phase = KVOnly | Full
+    deriving stock (Show, Eq)
+
+{- | Phase-aware operations selector with transition
+logic.
+
+Upstream owns the state machine (phase transitions),
+downstream owns the transaction. This lets consumers
+like CageFollower use the same KVOnly→Full strategy
+without going through the 'Update' continuation API.
+-}
+data SplitMode m slot tip ops = SplitMode
+    { currentOps :: m ops
+    -- ^ Get current phase's operations
+    , afterForward :: slot -> tip -> m ()
+    -- ^ Post-forward hook: trigger transition
+    , currentPhase :: m Phase
+    -- ^ Query current phase
+    }
+
+{- | Create a 'SplitMode' backed by the 'Ops' GADT.
+
+In 'MTS.KVOnly', 'afterForward' checks 'isAtTip'; on
+first @True@ it calls 'toFull' (which replays the
+journal) and switches to 'Full'. Once in 'Full',
+'afterForward' is a no-op.
+-}
+mkSplitMode
+    :: MonadIO m
+    => ops
+    -- ^ KVOnly ops (phase 1)
+    -> ops
+    -- ^ Full ops (phase 2)
+    -> (slot -> tip -> Bool)
+    -- ^ Tip proximity predicate
+    -> m ()
+    -- ^ Replay action (journal → tree rebuild)
+    -> Phase
+    -- ^ Initial phase
+    -> IO (SplitMode m slot tip ops)
+mkSplitMode kvOps fullOps isAtTip replay initial =
+    do
+        phaseRef <- newIORef initial
+        pure
+            SplitMode
+                { currentOps = do
+                    p <- liftIO $ readIORef phaseRef
+                    pure $ case p of
+                        KVOnly -> kvOps
+                        Full -> fullOps
+                , afterForward = \slot tip -> do
+                    p <- liftIO $ readIORef phaseRef
+                    when (p == KVOnly && isAtTip slot tip)
+                        $ do
+                            replay
+                            liftIO
+                                $ writeIORef
+                                    phaseRef
+                                    Full
+                , currentPhase =
+                    liftIO $ readIORef phaseRef
+                }
+
 -- | Convert KVOnly 'CommonOps' to 'CSMTOps' (root hash always 'Nothing').
 kvCommonToCSMTOps
     :: (Monad m)
@@ -915,7 +985,7 @@ kvCommonToCSMTOps CommonOps{opsInsert, opsDelete} =
 
 -- | Convert 'Full' 'Ops' to 'CSMTOps'.
 fullOpsToCSMTOps
-    :: Ops 'Full m cf d ops k v a
+    :: Ops 'MTS.Full m cf d ops k v a
     -> CSMTOps (Transaction m cf d ops) k v a
 fullOpsToCSMTOps
     OpsFull
