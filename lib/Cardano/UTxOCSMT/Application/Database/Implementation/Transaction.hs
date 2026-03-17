@@ -3,6 +3,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , CSMTContext (..)
     , CSMTOps (..)
     , mkCSMTOps
+    , mkCSMTKVOnlyOps
     , queryMerkleRoot
     , queryByAddress
     )
@@ -15,16 +16,19 @@ import CSMT
     )
 import CSMT.Deletion (deleting)
 import CSMT.Interface (Indirect (..), Key, root)
+import CSMT.MTS (Ops, mkKVOnlyOps)
 import CSMT.Proof.Completeness (collectValues)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
-import Control.Lens (review)
+import Control.Lens (Iso', review)
+import Data.ByteString (ByteString)
 import Data.Maybe (catMaybes)
 import Database.KV.Transaction
     ( Transaction
     , query
     )
+import MTS.Interface (Mode (..))
 
 newtype RunTransaction cf op slot hash key value m = RunTransaction
     { transact
@@ -65,6 +69,48 @@ mkCSMTOps fkv h =
         , csmtDelete = deleting [] fkv h KVCol CSMTCol
         , csmtRootHash = root h CSMTCol []
         }
+
+{- | Build KVOnly 'Ops' for the UTxO 'Columns', wiring
+'KVCol', 'CSMTCol', and 'JournalCol' into the
+column-parametric builder from MTS.
+-}
+mkCSMTKVOnlyOps
+    :: (Monad m, Ord key)
+    => Int
+    -- ^ Bucket bits for parallel replay
+    -> Int
+    -- ^ Chunk size for journal batches
+    -> Iso' value ByteString
+    -- ^ Journal value serialization
+    -> FromKV key value hash
+    -> Hashing hash
+    -> ( forall b
+          . Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                b
+         -> IO b
+       )
+    -- ^ Transaction runner (must be thread-safe)
+    -> Ops
+        'KVOnly
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        key
+        value
+        hash
+mkCSMTKVOnlyOps bucketBits chunkSize =
+    mkKVOnlyOps
+        []
+        bucketBits
+        chunkSize
+        KVCol
+        CSMTCol
+        JournalCol
 
 queryMerkleRoot
     :: Monad m

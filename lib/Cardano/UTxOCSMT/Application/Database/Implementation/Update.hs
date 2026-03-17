@@ -52,7 +52,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
-import Control.Monad (forM, forM_, when)
+import Control.Monad (forM, forM_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
@@ -930,46 +930,89 @@ data SplitMode m slot tip ops = SplitMode
 
 {- | Create a 'SplitMode' backed by the 'Ops' GADT.
 
-In 'MTS.KVOnly', 'afterForward' checks 'isAtTip'; on
+The Ops GADT enforces correctness: 'toFull' replays
+the journal and returns Full ops atomically. The
+caller only sees 'CSMTOps' — the GADT transitions
+are internal.
+
+In 'KVOnly', 'afterForward' checks 'isAtTip'; on
 first @True@ it calls 'toFull' (which replays the
 journal) and switches to 'Full'. Once in 'Full',
 'afterForward' is a no-op.
 -}
 mkSplitMode
-    :: MonadIO m
-    => ops
-    -- ^ KVOnly ops (phase 1)
-    -> ops
-    -- ^ Full ops (phase 2)
-    -> (slot -> tip -> Bool)
+    :: (Monad m)
+    => Ops
+        'MTS.KVOnly
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        key
+        value
+        hash
+    -> (s -> t -> Bool)
     -- ^ Tip proximity predicate
-    -> m ()
-    -- ^ Replay action (journal → tree rebuild)
     -> Phase
     -- ^ Initial phase
-    -> IO (SplitMode m slot tip ops)
-mkSplitMode kvOps fullOps isAtTip replay initial =
-    do
-        phaseRef <- newIORef initial
-        pure
-            SplitMode
-                { currentOps = do
-                    p <- liftIO $ readIORef phaseRef
-                    pure $ case p of
-                        KVOnly -> kvOps
-                        Full -> fullOps
-                , afterForward = \slot tip -> do
-                    p <- liftIO $ readIORef phaseRef
-                    when (p == KVOnly && isAtTip slot tip)
-                        $ do
-                            replay
-                            liftIO
-                                $ writeIORef
-                                    phaseRef
-                                    Full
-                , currentPhase =
-                    liftIO $ readIORef phaseRef
-                }
+    -> IO
+        ( SplitMode
+            IO
+            s
+            t
+            ( CSMTOps
+                ( Transaction
+                    m
+                    cf
+                    (Columns slot hash key value)
+                    op
+                )
+                key
+                value
+                hash
+            )
+        )
+mkSplitMode ops isAtTip initial = do
+    let kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)
+    -- Mutable state: Left = KVOnly, Right = Full CSMTOps
+    initialState <- case initial of
+        KVOnly -> pure (Left kvCSMTOps)
+        Full -> do
+            mFull <- toFull ops
+            case mFull of
+                Just fullOps ->
+                    pure
+                        $ Right
+                        $ fullOpsToCSMTOps fullOps
+                Nothing ->
+                    error
+                        "mkSplitMode: toFull failed on init"
+    ref <- newIORef initialState
+    pure
+        SplitMode
+            { currentOps = do
+                either id id <$> readIORef ref
+            , afterForward = \slot tip -> do
+                st <- readIORef ref
+                case st of
+                    Left _ | isAtTip slot tip -> do
+                        mFull <- toFull ops
+                        case mFull of
+                            Just fullOps ->
+                                writeIORef ref
+                                    $ Right
+                                    $ fullOpsToCSMTOps
+                                        fullOps
+                            Nothing ->
+                                error
+                                    "mkSplitMode: toFull failed"
+                    _ -> pure ()
+            , currentPhase = do
+                st <- readIORef ref
+                pure $ case st of
+                    Left _ -> KVOnly
+                    Right _ -> Full
+            }
 
 -- | Convert KVOnly 'CommonOps' to 'CSMTOps' (root hash always 'Nothing').
 kvCommonToCSMTOps
