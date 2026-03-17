@@ -32,8 +32,10 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , renderUpdateTrace
     )
 import Cardano.UTxOCSMT.Application.Metrics
-    ( MetricsEvent (..)
+    ( Metrics (..)
+    , MetricsEvent (..)
     , SyncPhase (..)
+    , renderBlockPoint
     )
 import Cardano.UTxOCSMT.Application.Run.Application
     ( ApplicationTrace (..)
@@ -85,6 +87,8 @@ data MainTraces
       NodeValidation NodeValidationTrace
     | -- | Genesis bootstrap: inserted N UTxOs from genesis file
       GenesisBootstrap Int
+    | -- | Periodic metrics snapshot from fold accumulator
+      MetricsReport Metrics
     deriving (Show)
 
 -- | Render a 'MainTraces' value to a human-readable log string.
@@ -115,6 +119,19 @@ renderMainTraces (GenesisBootstrap n) =
     "Genesis bootstrap: inserted "
         ++ show n
         ++ " UTxOs from genesis file"
+renderMainTraces (MetricsReport m) =
+    "blocks="
+        ++ show (cumulativeBlocks m)
+        ++ " utxos="
+        ++ show (utxoChangesCount m)
+        ++ " blk/s="
+        ++ show (round (blockSpeed m) :: Int)
+        ++ " utxo/s="
+        ++ show (round (utxoSpeed m) :: Int)
+        ++ " tip="
+        ++ maybe "N/A" renderBlockPoint (lastBlockPoint m)
+        ++ " phase="
+        ++ maybe "N/A" show (syncPhase m)
 
 -- | Render a 'NodeValidationTrace' value to a human-readable log string.
 renderNodeValidationTrace :: NodeValidationTrace -> String
@@ -172,6 +189,7 @@ matchHighFrequencyEvents = \case
     Update (UpdateCSMTMeasured{}) -> Just 1.0
     Update (UpdateRollbackMeasured{}) -> Just 1.0
     Update (UpdateTransactMeasured{}) -> Just 1.0
+    MetricsReport{} -> Just 1.0
     _ -> Nothing
 
 {- | Render a throttled 'MainTraces' value to a log string.

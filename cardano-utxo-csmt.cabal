@@ -109,12 +109,10 @@ library application
     Cardano.UTxOCSMT.Application.Run.GenesisData
     Cardano.UTxOCSMT.Application.Run.Main
     Cardano.UTxOCSMT.Application.Run.Query
-    Cardano.UTxOCSMT.Application.Run.RenderMetrics
     Cardano.UTxOCSMT.Application.Run.Setup
     Cardano.UTxOCSMT.Application.Run.Traces
 
   build-depends:
-    , ansi-terminal
     , async
     , base
     , bytestring
@@ -186,7 +184,6 @@ library library
 
   build-depends:
     , aeson
-    , async
     , autodocodec
     , base
     , bytestring
@@ -204,7 +201,6 @@ library library
     , cardano-read-ledger
     , cardano-strict-containers
     , cborg
-    , comonad
     , containers
     , contra-tracer
     , contra-tracer-contrib
