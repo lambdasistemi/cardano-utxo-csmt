@@ -9,9 +9,11 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Query
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
+    , DbState (..)
+    , ReadyState (..)
     , RunTransaction (..)
-    , mkCSMTKVOnlyOps
     , mkCSMTOps
+    , openCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Update
     ( fullForwardOps
@@ -173,15 +175,29 @@ main = withUtf8 $ do
                 newRunRocksDBTransaction
                     db
                     prisms
-            let kvOnlyOps =
-                    mkCSMTKVOnlyOps
-                        4
-                        1000
-                        (iso BL.toStrict BL.fromStrict)
-                        fkv
-                        h
-                        (transact runner)
-                        (trace . JournalReplay)
+            -- Open ops with crash recovery
+            dbState <-
+                openCSMTOps
+                    4
+                    1000
+                    (iso BL.toStrict BL.fromStrict)
+                    fkv
+                    h
+                    (transact runner)
+                    (trace . JournalReplay)
+            -- Resolve DbState: recover if crashed, then
+            -- extract KVOnly ops
+            let resolve (NeedsRecovery recover) = do
+                    trace DbNeedsRecovery
+                    st <- recover
+                    trace DbRecoveryDone
+                    resolve st
+                resolve (Ready (ChooseKVOnly kvOps)) = do
+                    trace DbReadyKVOnly
+                    pure kvOps
+                resolve (Ready (ChooseFull _)) =
+                    fail "openCSMTOps: unexpected ChooseFull"
+            kvOnlyOps <- resolve dbState
 
             let getReadyResponse =
                     mkReadyResponse (syncThreshold options)

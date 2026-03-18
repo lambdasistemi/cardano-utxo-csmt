@@ -3,7 +3,9 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , CSMTContext (..)
     , CSMTOps (..)
     , mkCSMTOps
-    , mkCSMTKVOnlyOps
+    , openCSMTOps
+    , DbState (..)
+    , ReadyState (..)
     , ReplayEvent (..)
     , queryMerkleRoot
     , queryByAddress
@@ -17,7 +19,12 @@ import CSMT
     )
 import CSMT.Deletion (deleting)
 import CSMT.Interface (Indirect (..), Key, root)
-import CSMT.MTS (Ops, ReplayEvent (..), mkKVOnlyOps)
+import CSMT.MTS
+    ( DbState (..)
+    , ReadyState (..)
+    , ReplayEvent (..)
+    , openOps
+    )
 import CSMT.Proof.Completeness (collectValues)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
@@ -29,7 +36,6 @@ import Database.KV.Transaction
     ( Transaction
     , query
     )
-import MTS.Interface (Mode (..))
 
 newtype RunTransaction cf op slot hash key value m = RunTransaction
     { transact
@@ -71,12 +77,16 @@ mkCSMTOps fkv h =
         , csmtRootHash = root h CSMTCol []
         }
 
-{- | Build KVOnly 'Ops' for the UTxO 'Columns', wiring
-'KVCol', 'CSMTCol', and 'JournalCol' into the
-column-parametric builder from MTS.
+{- | Open CSMT ops with crash recovery, wiring 'KVCol',
+'CSMTCol', and 'JournalCol' into the column-parametric
+'openOps' from MTS.
+
+Returns 'DbState' which must be resolved before use:
+- 'NeedsRecovery': run recovery action first
+- 'Ready': choose KVOnly or Full mode
 -}
-mkCSMTKVOnlyOps
-    :: (Monad m, Ord key)
+openCSMTOps
+    :: (Monad m, Ord key, Monoid key)
     => Int
     -- ^ Bucket bits for parallel replay
     -> Int
@@ -94,20 +104,21 @@ mkCSMTKVOnlyOps
                 b
          -> IO b
        )
-    -- ^ Transaction runner (must be thread-safe)
+    -- ^ Transaction runner
     -> (ReplayEvent -> IO ())
     -- ^ Trace callback (called per replay chunk)
-    -> Ops
-        'KVOnly
-        m
-        cf
-        (Columns slot hash key value)
-        op
-        key
-        value
-        hash
-mkCSMTKVOnlyOps bucketBits chunkSize =
-    mkKVOnlyOps
+    -> IO
+        ( DbState
+            m
+            cf
+            (Columns slot hash key value)
+            op
+            key
+            value
+            hash
+        )
+openCSMTOps bucketBits chunkSize =
+    openOps
         []
         bucketBits
         chunkSize

@@ -92,6 +92,14 @@ data MainTraces
       MetricsReport Metrics
     | -- | Journal replay chunk event
       JournalReplay ReplayEvent
+    | -- | Database opened: crash recovery needed
+      DbNeedsRecovery
+    | -- | Database opened: ready in KVOnly mode
+      DbReadyKVOnly
+    | -- | Database opened: ready in Full mode
+      DbReadyFull
+    | -- | Crash recovery completed
+      DbRecoveryDone
     deriving (Show)
 
 -- | Render a 'MainTraces' value to a human-readable log string.
@@ -133,6 +141,14 @@ renderMainTraces (JournalReplay (ReplayStart cs bs tb ops)) =
         ++ show ops
 renderMainTraces (JournalReplay ReplayStop) =
     "Journal replay: chunk done"
+renderMainTraces DbNeedsRecovery =
+    "Database opened: crash recovery needed (sentinel found)"
+renderMainTraces DbReadyKVOnly =
+    "Database opened: ready in KVOnly mode (journal has entries)"
+renderMainTraces DbReadyFull =
+    "Database opened: ready in Full mode (journal empty)"
+renderMainTraces DbRecoveryDone =
+    "Crash recovery completed"
 renderMainTraces (MetricsReport m) =
     "blocks="
         ++ show (cumulativeBlocks m)
