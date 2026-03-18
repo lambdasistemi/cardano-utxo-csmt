@@ -18,7 +18,6 @@ where
 
 import CSMT.Hashes
     ( Hash
-    , byteStringToKey
     , generateInclusionProof
     , renderHash
     )
@@ -38,7 +37,10 @@ import Cardano.UTxOCSMT.Application.Metrics
     ( Metrics (..)
     , SyncPhase (..)
     )
-import Cardano.UTxOCSMT.Application.Run.Config (context)
+import Cardano.UTxOCSMT.Application.Run.Config
+    ( context
+    , hashAddressKey
+    )
 import Cardano.UTxOCSMT.Application.UTxOs (unsafeMkTxIn)
 import Cardano.UTxOCSMT.HTTP.API
     ( InclusionProofResponse (..)
@@ -158,7 +160,7 @@ queryUTxOsByAddress (RunTransaction runTx) addressHex =
         Left err -> pure $ Left $ "Invalid base16 address: " <> err
         Right addressBytes -> do
             let CSMTContext{fromKV} = context
-                addressKey = byteStringToKey addressBytes
+                addressKey = hashAddressKey addressBytes
             results <- runTx $ queryByAddress fromKV addressKey
             pure $ Right $ fmap toEntry results
   where

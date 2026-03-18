@@ -7,6 +7,7 @@ module Cardano.UTxOCSMT.Application.Run.Config
     , slotHash
     , encodePoint
     , decodePoint
+    , hashAddressKey
     )
 where
 
@@ -28,6 +29,7 @@ import CSMT.Hashes
     , hashHashing
     , isoHash
     , mkHash
+    , renderHash
     )
 import Cardano.Ledger.Address (unCompactAddr)
 import Cardano.Ledger.Babbage.TxOut (BabbageTxOut)
@@ -151,9 +153,19 @@ context =
         , hashing = hashHashing
         }
 
+{- | Hash raw address bytes to a CSMT key.
+
+Hashing produces uniform prefix distribution
+regardless of address type byte, enabling even
+bucket splits for parallel replay.
+-}
+hashAddressKey :: StrictByteString -> Key
+hashAddressKey =
+    byteStringToKey . renderHash . mkHash
+
 -- | Extract address bytes from a CBOR-encoded Conway TxOut, convert to tree key prefix.
 addressPrefix :: StrictByteString -> Key
-addressPrefix cborTxOut = byteStringToKey addressBytes
+addressPrefix cborTxOut = hashAddressKey addressBytes
   where
     addressBytes =
         case decodeFull
