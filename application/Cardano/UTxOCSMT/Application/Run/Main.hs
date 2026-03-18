@@ -181,6 +181,7 @@ main = withUtf8 $ do
                         fkv
                         h
                         (transact runner)
+                        (trace . JournalReplay)
 
             let getReadyResponse =
                     mkReadyResponse (syncThreshold options)

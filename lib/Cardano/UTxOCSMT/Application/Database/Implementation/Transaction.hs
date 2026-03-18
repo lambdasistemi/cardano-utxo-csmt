@@ -4,6 +4,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , CSMTOps (..)
     , mkCSMTOps
     , mkCSMTKVOnlyOps
+    , ReplayEvent (..)
     , queryMerkleRoot
     , queryByAddress
     )
@@ -16,7 +17,7 @@ import CSMT
     )
 import CSMT.Deletion (deleting)
 import CSMT.Interface (Indirect (..), Key, root)
-import CSMT.MTS (Ops, mkKVOnlyOps)
+import CSMT.MTS (Ops, ReplayEvent (..), mkKVOnlyOps)
 import CSMT.Proof.Completeness (collectValues)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
@@ -94,6 +95,8 @@ mkCSMTKVOnlyOps
          -> IO b
        )
     -- ^ Transaction runner (must be thread-safe)
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback (called per replay chunk)
     -> Ops
         'KVOnly
         m

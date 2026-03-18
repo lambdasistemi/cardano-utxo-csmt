@@ -19,6 +19,7 @@ where
 -- services.
 
 import CSMT.Hashes (Hash)
+import CSMT.MTS (ReplayEvent (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonTrace
     , renderArmageddonTrace
@@ -89,8 +90,8 @@ data MainTraces
       GenesisBootstrap Int
     | -- | Periodic metrics snapshot from fold accumulator
       MetricsReport Metrics
-    | -- | Journal replay chunk processed (entries in chunk)
-      JournalReplay Int
+    | -- | Journal replay chunk event
+      JournalReplay ReplayEvent
     deriving (Show)
 
 -- | Render a 'MainTraces' value to a human-readable log string.
@@ -121,8 +122,17 @@ renderMainTraces (GenesisBootstrap n) =
     "Genesis bootstrap: inserted "
         ++ show n
         ++ " UTxOs from genesis file"
-renderMainTraces (JournalReplay n) =
-    "Journal replay: " ++ show n ++ " entries"
+renderMainTraces (JournalReplay (ReplayStart cs bs tb ops)) =
+    "Journal replay: chunk="
+        ++ show cs
+        ++ " buckets="
+        ++ show bs
+        ++ "/"
+        ++ show tb
+        ++ " ops/bucket="
+        ++ show ops
+renderMainTraces (JournalReplay ReplayStop) =
+    "Journal replay: chunk done"
 renderMainTraces (MetricsReport m) =
     "blocks="
         ++ show (cumulativeBlocks m)
