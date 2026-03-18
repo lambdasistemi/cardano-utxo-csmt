@@ -16,7 +16,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Query
     )
 where
 
-import CSMT.Hashes (byteStringToKey)
+import CSMT.Hashes
+    ( byteStringToKey
+    , mkHash
+    , renderHash
+    )
 import CSMT.Interface (Indirect (..), Key)
 import CSMT.Proof.Completeness (collectValues)
 import Cardano.UTxOCSMT.Application.Database.Implementation.AppConfig
@@ -85,7 +89,11 @@ mkQuery isoK =
                     Nothing -> lift . lift $ fail "No finality point in rollback points"
                     Just e -> pure $ entryKey e
         , getByAddress = \addressBytes -> do
-            let addressKey = byteStringToKey addressBytes
+            let addressKey =
+                    byteStringToKey
+                        . renderHash
+                        . mkHash
+                        $ addressBytes
             indirects <- collectValues CSMTCol [] addressKey
             catMaybes <$> traverse lookupKV indirects
         }
