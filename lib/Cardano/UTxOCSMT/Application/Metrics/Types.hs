@@ -69,6 +69,10 @@ import Data.Swagger qualified as Swagger
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Time (UTCTime)
+import Data.Tracer.Prometheus
+    ( renderPrometheusLines
+    )
+import Data.Tracer.Prometheus qualified as Prom
 import Data.Word (Word64)
 import GHC.IsList (IsList (..))
 import Ouroboros.Network.Block (SlotNo (..), blockPoint)
@@ -392,152 +396,161 @@ data MetricsParams = MetricsParams
 -- | Render metrics in Prometheus exposition text format
 renderPrometheus :: Metrics -> Text
 renderPrometheus m =
-    Text.unlines
-        $ concat
-            [ gauge
+    renderPrometheusLines
+        $ [ Prom.gauge
+                p
                 "queue_length_avg"
                 "Average block fetch queue length"
                 (averageQueueLength m)
-            , maybe
+          ]
+            <> maybe
                 []
-                ( gauge
-                    "queue_length_max"
-                    "Maximum block fetch queue length"
-                    . fromIntegral @Int @Double
+                ( \v ->
+                    [ Prom.gauge
+                        p
+                        "queue_length_max"
+                        "Maximum block fetch queue length"
+                        (fromIntegral @Int @Double v)
+                    ]
                 )
                 (maxQueueLength m)
-            , counter
-                "utxo_changes_total"
-                "Total UTxO changes processed"
-                (fromIntegral @Int @Double $ utxoChangesCount m)
-            , gauge
-                "utxo_speed"
-                "UTxO changes per second"
-                (utxoSpeed m)
-            , gauge
-                "block_speed"
-                "Blocks processed per second"
-                (blockSpeed m)
-            , maybe
+            <> [ Prom.counter
+                    p
+                    "utxo_changes_total"
+                    "Total UTxO changes processed"
+                    (fromIntegral @Int @Double $ utxoChangesCount m)
+               , Prom.gauge
+                    p
+                    "utxo_speed"
+                    "UTxO changes per second"
+                    (utxoSpeed m)
+               , Prom.gauge
+                    p
+                    "block_speed"
+                    "Blocks processed per second"
+                    (blockSpeed m)
+               ]
+            <> maybe
                 []
-                ( gauge
-                    "chain_tip_slot"
-                    "Chain tip slot from node"
-                    . fromIntegral @Word64 @Double
-                    . unSlotNo
+                ( \slot ->
+                    [ Prom.gauge
+                        p
+                        "chain_tip_slot"
+                        "Chain tip slot from node"
+                        ( fromIntegral @Word64 @Double
+                            $ unSlotNo slot
+                        )
+                    ]
                 )
                 (chainTipSlot m)
-            , lastBlockSlotLines m
-            , readyLine m
-            , counter
-                "blocks_total"
-                "Total blocks processed"
-                (fromIntegral @Int @Double $ cumulativeBlocks m)
-            , gauge
-                "avg_csmt_duration_us"
-                "Average CSMT operation duration in microseconds"
-                (avgCSMTDuration m)
-            , gauge
-                "avg_rollback_duration_us"
-                "Average rollback duration in microseconds"
-                (avgRollbackDuration m)
-            , gauge
-                "avg_finality_duration_us"
-                "Average finality pruning duration in microseconds"
-                (avgFinalityDuration m)
-            , gauge
-                "avg_block_decode_duration_us"
-                "Average block decode duration in microseconds"
-                (avgBlockDecodeDuration m)
-            , gauge
-                "avg_transaction_duration_us"
-                "Average transaction duration in microseconds"
-                (avgTransactionDuration m)
-            , gauge
-                "avg_total_block_duration_us"
-                "Average total block processing duration in microseconds"
-                (avgTotalBlockDuration m)
-            , counter
-                "cumulative_block_decode_duration_us"
-                "Cumulative block decode duration in microseconds"
-                (cumulativeBlockDecodeDuration m)
-            , counter
-                "cumulative_transaction_duration_us"
-                "Cumulative transaction duration in microseconds"
-                (cumulativeTransactionDuration m)
-            , counter
-                "cumulative_csmt_duration_us"
-                "Cumulative CSMT operation duration in microseconds"
-                (cumulativeCSMTDuration m)
-            , counter
-                "cumulative_rollback_duration_us"
-                "Cumulative rollback duration in microseconds"
-                (cumulativeRollbackDuration m)
-            , counter
-                "cumulative_finality_duration_us"
-                "Cumulative finality pruning duration in microseconds"
-                (cumulativeFinalityDuration m)
-            , counter
-                "cumulative_total_block_duration_us"
-                "Cumulative total block processing duration in microseconds"
-                (cumulativeTotalBlockDuration m)
-            , counter
-                "cumulative_query_tip_us"
-                "Cumulative internal queryTip duration in microseconds"
-                (cumulativeInternalQueryTip m)
-            , counter
-                "cumulative_csmt_ops_us"
-                "Cumulative internal CSMT ops duration in microseconds"
-                (cumulativeInternalCsmtOps m)
-            , counter
-                "cumulative_rollback_store_us"
-                "Cumulative internal rollback store duration in microseconds"
-                (cumulativeInternalRollbackStore m)
-            ]
+            <> lastBlockSlotLines m
+            <> [ readyLine m
+               , Prom.counter
+                    p
+                    "blocks_total"
+                    "Total blocks processed"
+                    (fromIntegral @Int @Double $ cumulativeBlocks m)
+               , Prom.gauge
+                    p
+                    "avg_csmt_duration_us"
+                    "Average CSMT operation duration in microseconds"
+                    (avgCSMTDuration m)
+               , Prom.gauge
+                    p
+                    "avg_rollback_duration_us"
+                    "Average rollback duration in microseconds"
+                    (avgRollbackDuration m)
+               , Prom.gauge
+                    p
+                    "avg_finality_duration_us"
+                    "Average finality pruning duration in microseconds"
+                    (avgFinalityDuration m)
+               , Prom.gauge
+                    p
+                    "avg_block_decode_duration_us"
+                    "Average block decode duration in microseconds"
+                    (avgBlockDecodeDuration m)
+               , Prom.gauge
+                    p
+                    "avg_transaction_duration_us"
+                    "Average transaction duration in microseconds"
+                    (avgTransactionDuration m)
+               , Prom.gauge
+                    p
+                    "avg_total_block_duration_us"
+                    "Average total block processing duration in microseconds"
+                    (avgTotalBlockDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_block_decode_duration_us"
+                    "Cumulative block decode duration in microseconds"
+                    (cumulativeBlockDecodeDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_transaction_duration_us"
+                    "Cumulative transaction duration in microseconds"
+                    (cumulativeTransactionDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_csmt_duration_us"
+                    "Cumulative CSMT operation duration in microseconds"
+                    (cumulativeCSMTDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_rollback_duration_us"
+                    "Cumulative rollback duration in microseconds"
+                    (cumulativeRollbackDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_finality_duration_us"
+                    "Cumulative finality pruning duration in microseconds"
+                    (cumulativeFinalityDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_total_block_duration_us"
+                    "Cumulative total block processing duration in microseconds"
+                    (cumulativeTotalBlockDuration m)
+               , Prom.counter
+                    p
+                    "cumulative_query_tip_us"
+                    "Cumulative internal queryTip duration in microseconds"
+                    (cumulativeInternalQueryTip m)
+               , Prom.counter
+                    p
+                    "cumulative_csmt_ops_us"
+                    "Cumulative internal CSMT ops duration in microseconds"
+                    (cumulativeInternalCsmtOps m)
+               , Prom.counter
+                    p
+                    "cumulative_rollback_store_us"
+                    "Cumulative internal rollback store duration in microseconds"
+                    (cumulativeInternalRollbackStore m)
+               ]
   where
-    prefix :: Text
-    prefix = "cardano_utxo_csmt"
+    p :: Text
+    p = "cardano_utxo_csmt"
 
-    metric
-        :: Text -> Text -> Text -> Double -> [Text]
-    metric typ name help val =
-        [ "# HELP " <> prefix <> "_" <> name <> " " <> help
-        , "# TYPE " <> prefix <> "_" <> name <> " " <> typ
-        , prefix <> "_" <> name <> " " <> showDouble val
-        ]
-
-    gauge :: Text -> Text -> Double -> [Text]
-    gauge = metric "gauge"
-
-    counter :: Text -> Text -> Double -> [Text]
-    counter = metric "counter"
-
-    showDouble :: Double -> Text
-    showDouble v =
-        let s = Text.pack $ show v
-        in  -- Prometheus prefers "0" not "0.0" for integers
-            if Text.isSuffixOf ".0" s
-                then Text.dropEnd 2 s
-                else s
-
-    lastBlockSlotLines :: Metrics -> [Text]
+    lastBlockSlotLines :: Metrics -> [[Text]]
     lastBlockSlotLines metrics = case lastBlockPoint metrics of
         Just (_, header) ->
             case blockPoint header of
                 Network.Point (At block) ->
-                    gauge
+                    [ Prom.gauge
+                        p
                         "processed_slot"
                         "Last processed slot number"
                         ( fromIntegral @Word64 @Double
                             $ unSlotNo
                             $ blockPointSlot block
                         )
+                    ]
                 _ -> []
         Nothing -> []
 
     readyLine :: Metrics -> [Text]
     readyLine metrics =
-        gauge
+        Prom.gauge
+            p
             "ready"
             "Service readiness (1=ready, 0=not ready)"
             ( case syncPhase metrics of
