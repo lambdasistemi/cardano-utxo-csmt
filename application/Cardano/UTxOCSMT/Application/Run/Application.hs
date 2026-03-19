@@ -8,9 +8,11 @@ where
 
 import CSMT ()
 import Cardano.Chain.Slotting (EpochSlots)
+import Cardano.Node.Client.N2C.ChainSync
+    ( Fetched (..)
+    )
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength
-    , Fetched (..)
     , mkBlockFetchApplication
     )
 import Cardano.UTxOCSMT.Application.ChainSync
@@ -33,8 +35,8 @@ import Cardano.UTxOCSMT.Application.UTxOs
     , uTxOsWithTxCount
     )
 import Cardano.UTxOCSMT.Ouroboros.Connection (runNodeApplication)
-import Cardano.UTxOCSMT.Ouroboros.ConnectionN2C
-    ( runLocalNodeApplication
+import Cardano.Node.Client.N2C.ChainSync
+    ( runChainSyncN2C
     )
 import Cardano.UTxOCSMT.Ouroboros.Types
     ( Follower (..)
@@ -329,7 +331,7 @@ applicationN2C
                         points
 
             result <-
-                runLocalNodeApplication
+                runChainSyncN2C
                     epochSlots
                     networkMagic'
                     socketPath

@@ -23,6 +23,9 @@ module Cardano.UTxOCSMT.Application.BlockFetch
     )
 where
 
+import Cardano.Node.Client.N2C.ChainSync
+    ( Fetched (..)
+    )
 import Cardano.UTxOCSMT.Application.ChainSync
     ( Follower (..)
     , ProgressOrRewind (..)
@@ -82,14 +85,6 @@ data HeaderSkipProgress = HeaderSkipProgress
     -- ^ Target slot to reach
     }
     deriving (Show)
-
--- | A fetched block along with its point and chain tip
-data Fetched = Fetched
-    { fetchedPoint :: Point
-    , fetchedBlock :: Block
-    , fetchedTip :: SlotNo
-    -- ^ Chain tip slot at the time the header was received
-    }
 
 {- | Create a block fetch application and promote compute an header intersector
 for the chain sync application

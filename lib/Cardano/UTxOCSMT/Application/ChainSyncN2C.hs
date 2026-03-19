@@ -11,9 +11,11 @@ module Cardano.UTxOCSMT.Application.ChainSyncN2C
     ( mkN2CChainSyncApplication
     ) where
 
-import Cardano.UTxOCSMT.Application.BlockFetch
+import Cardano.Node.Client.N2C.ChainSync
     ( Fetched (..)
-    , HeaderSkipProgress (..)
+    )
+import Cardano.UTxOCSMT.Application.BlockFetch
+    ( HeaderSkipProgress (..)
     )
 import Cardano.UTxOCSMT.Ouroboros.Types
     ( Block

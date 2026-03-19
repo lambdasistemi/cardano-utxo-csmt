@@ -121,6 +121,7 @@ library application
     , cardano-ledger-byron
     , cardano-ledger-conway
     , cardano-ledger-core
+    , cardano-node-clients
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
     , cborg
@@ -197,6 +198,7 @@ library library
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-shelley
+    , cardano-node-clients
     , chain-follower
     , cardano-read-ledger
     , cardano-strict-containers
