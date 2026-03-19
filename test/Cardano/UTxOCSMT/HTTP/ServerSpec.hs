@@ -320,7 +320,6 @@ withTestDB action =
                     runner
                     maxBound
                     (\_ -> pure ())
-                    0
 
 -- | Run tests with a fresh RocksDB database using address-prefixed CSMT
 withTestDBPrefixed
@@ -353,7 +352,6 @@ withTestDBPrefixed action =
                     runner
                     maxBound
                     (\_ -> pure ())
-                    0
 
 -- | Open RocksDB with test column families
 withRocksDB :: FilePath -> (DB -> IO b) -> IO b
@@ -365,6 +363,8 @@ withRocksDB path =
         , ("csmt", testConfig)
         , ("rollbacks", testConfig)
         , ("config", testConfig)
+        , ("journal", testConfig)
+        , ("metrics", testConfig)
         ]
 
 -- | Sample metrics for testing

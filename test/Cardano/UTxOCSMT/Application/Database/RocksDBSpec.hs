@@ -234,7 +234,6 @@ runRocksDBProperties prop =
             runner
             testSecurityParam
             (\_ -> pure ())
-            1 -- Origin rollback point from setup
 
 test
     :: PropertyWithExpected
@@ -414,6 +413,8 @@ withRocksDB path action = do
         , ("csmt", config)
         , ("rollbacks", config)
         , ("config", config)
+        , ("journal", config)
+        , ("metrics", config)
         ]
         $ \db -> do
             action $ RunRocksDB $ flip runReaderT db
