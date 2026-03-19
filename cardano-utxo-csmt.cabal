@@ -370,6 +370,34 @@ test-suite cardano-utxo-csmt-integration-test
     Cardano.Node.Client.E2E.ProviderSpec
     Cardano.Node.Client.E2E.SubmitterSpec
 
+test-suite db-recovery-tests
+  import:           warnings
+  ghc-options:      -Wno-unused-packages -threaded -rtsopts
+  default-language: GHC2021
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   db-recovery-test
+  main-is:          main.hs
+  other-modules:
+    DbCompare
+    DbRecoverySpec
+
+  build-depends:
+    , base
+    , bytestring
+    , cardano-utxo-csmt:application
+    , cardano-utxo-csmt:library
+    , contra-tracer
+    , hspec
+    , lens
+    , mts
+    , mts:csmt
+    , ouroboros-consensus
+    , ouroboros-consensus-cardano
+    , ouroboros-network-api
+    , QuickCheck
+    , rocksdb-haskell-jprupp
+    , temporary
+
 test-suite e2e-tests
   import:           warnings
   ghc-options:      -Wno-unused-packages -Wno-orphans -threaded -rtsopts
