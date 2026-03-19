@@ -36,6 +36,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
+    , rollbackCounter
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( Meta
@@ -52,7 +53,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, void, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer)
@@ -74,14 +75,11 @@ import Data.Tracer.TraceWith
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
-    , firstEntry
     , lastEntry
-    , nextEntry
     , prevEntry
     )
 import Database.KV.Transaction
     ( Transaction
-    , delete
     , iterating
     , query
     )
@@ -318,15 +316,11 @@ newState
     runTransaction@RunTransaction{transact}
     securityParam
     saveCheckpoint = do
-        (cps, rollbackCount) <-
-            transact $ do
-                cps <-
-                    iterating
-                        RollbackPoints
-                        sampleRollbackPoints
-                rollbackCount <-
-                    Store.countPoints RollbackPoints
-                pure (cps, rollbackCount)
+        cps <-
+            transact
+                $ iterating
+                    RollbackPoints
+                    sampleRollbackPoints
         trace $ UpdateNewState cps
         let update =
                 mkUpdate
@@ -339,7 +333,6 @@ newState
                     runTransaction
                     securityParam
                     saveCheckpoint
-                    rollbackCount
         pure (update, cps)
 
 {- | Initialize split-mode state.
@@ -403,16 +396,14 @@ newSplitState
     runTransaction@RunTransaction{transact}
     securityParam
     saveCheckpoint = do
-        (cps, rollbackCount, empty) <-
+        (cps, empty) <-
             transact $ do
                 cps <-
                     iterating
                         RollbackPoints
                         sampleRollbackPoints
-                rollbackCount <-
-                    Store.countPoints RollbackPoints
                 empty <- journalEmptyT JournalCol
-                pure (cps, rollbackCount, empty)
+                pure (cps, empty)
         trace $ UpdateNewState cps
         if empty && not isGenesis
             then do
@@ -433,7 +424,6 @@ newSplitState
                                 runTransaction
                                 securityParam
                                 saveCheckpoint
-                                rollbackCount
                             , cps
                             )
                     Nothing ->
@@ -452,7 +442,6 @@ newSplitState
                         runTransaction
                         securityParam
                         saveCheckpoint
-                        rollbackCount
                     , cps
                     )
 
@@ -471,8 +460,6 @@ forwardTip
         value
         hash
     -> hash
-    -> Int
-    -- ^ rollback point count
     -> slot
     -- ^ slot at which operations happen
     -> [Operation key value]
@@ -488,7 +475,6 @@ forwardTip
     ForwardOps{doQueryTip, doCsmt, doRollback}
     CSMTOps{csmtInsert, csmtDelete, csmtRootHash}
     hash
-    count
     slot
     ops = do
         let io = lift . lift
@@ -496,6 +482,7 @@ forwardTip
             if doQueryTip
                 then queryTip
                 else pure Origin
+        count <- Store.readCount rollbackCounter
         if At slot > tip
             && (not (null ops) || count < 2)
             then do
@@ -565,35 +552,20 @@ updateRollbackPoint
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
 updateRollbackPoint rootHashQuery pointHash pointSlot inverseOps = do
     merkleRoot <- rootHashQuery
-    Store.storeRollbackPoint RollbackPoints (At pointSlot)
+    Store.countedStore RollbackPoints rollbackCounter (At pointSlot)
         $ UTxORollbackPoint pointHash inverseOps merkleRoot
     pure merkleRoot
 
 {- | Prune oldest rollback points when count exceeds
-the security parameter k. Returns number pruned.
+the security parameter k.
 -}
 pruneExcess
     :: (Ord slot, Monad m)
     => Int
-    -> Int
     -> RunTransaction cf op slot hash key value m
-    -> m Int
-pruneExcess securityParam currentCount RunTransaction{transact}
-    | excess <= 0 = pure 0
-    | otherwise =
-        transact
-            $ iterating RollbackPoints
-            $ do
-                me <- firstEntry
-                go excess me
-  where
-    excess = currentCount - securityParam
-    go 0 _ = pure 0
-    go _ Nothing = pure 0
-    go n (Just Entry{entryKey}) = do
-        lift $ delete RollbackPoints entryKey
-        next <- nextEntry
-        (+ 1) <$> go (n - 1) next
+    -> m ()
+pruneExcess securityParam RunTransaction{transact} =
+    void $ transact $ Store.pruneExcess RollbackPoints securityParam
 
 sampleRollbackPoints
     :: Monad m
@@ -663,8 +635,6 @@ mkUpdate
                 ()
        )
     -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> Int
-    -- ^ Initial rollback point count
     -> Update m slot key value
 mkUpdate
     tw@TraceWith{contra, trace}
@@ -678,7 +648,7 @@ mkUpdate
     saveCheckpoint =
         go
       where
-        go count =
+        go =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
@@ -691,23 +661,18 @@ mkUpdate
                                         forwardOps
                                         ops
                                         (slotHash slot)
-                                        count
                                         slot
                                         operations
                                 saveCheckpoint slot
                                 pure r
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
-                        if stored
-                            then do
-                                let newCount = count + 1
-                                pruned <-
-                                    pruneExcess
-                                        securityParam
-                                        newCount
-                                        runTransaction
-                                pure $ go (newCount - pruned)
-                            else pure $ go count
+                        when stored
+                            $ void
+                            $ pruneExcess
+                                securityParam
+                                runTransaction
+                        pure go
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -719,25 +684,22 @@ mkUpdate
                                             $ Store.RollbackSucceeded
                                                 0
                                     else
-                                        Store.rollbackTo
+                                        Store.countedRollbackTo
                                             RollbackPoints
+                                            rollbackCounter
                                             ( rollbackRollbackPoint
                                                 ops
                                             )
                                             (At s)
                         case r of
-                            Store.RollbackSucceeded deleted ->
-                                pure
-                                    $ Syncing
-                                    $ go (count - deleted)
+                            Store.RollbackSucceeded _ ->
+                                pure $ Syncing go
                             Store.RollbackImpossible -> do
                                 armageddonCall
-                                pure
-                                    $ Truncating
-                                    $ go 0
+                                pure $ Truncating go
                     Origin -> do
                         armageddonCall
-                        pure $ Syncing $ go 0
+                        pure $ Syncing go
                 }
         armageddonCall =
             armageddon
@@ -789,8 +751,6 @@ mkSplitUpdate
                 ()
        )
     -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> Int
-    -- ^ Initial rollback point count
     -> Update m slot key value
 mkSplitUpdate
     tw@TraceWith{contra, trace}
@@ -806,7 +766,7 @@ mkSplitUpdate
         goKVOnly
       where
         kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)
-        goKVOnly count =
+        goKVOnly =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
@@ -819,24 +779,17 @@ mkSplitUpdate
                                         kvOnlyForwardOps
                                         kvCSMTOps
                                         (slotHash slot)
-                                        count
                                         slot
                                         operations
                                 saveCheckpoint slot
                                 pure r
                         trace $ UpdateTransactDone slot
                         onForward slot chainTip
-                        count' <-
-                            if stored
-                                then do
-                                    let newCount = count + 1
-                                    pruned <-
-                                        pruneExcess
-                                            securityParam
-                                            newCount
-                                            runTransaction
-                                    pure (newCount - pruned)
-                                else pure count
+                        when stored
+                            $ void
+                            $ pruneExcess
+                                securityParam
+                                runTransaction
                         if isAtTip slot chainTip
                             then do
                                 trace UpdateJournalReplay
@@ -849,13 +802,11 @@ mkSplitUpdate
                                                 ( fullOpsToCSMTOps
                                                     fullOps
                                                 )
-                                                count'
                                     Nothing ->
                                         fail
                                             "mkSplitUpdate: toFull failed"
                             else
-                                pure
-                                    $ goKVOnly count'
+                                pure goKVOnly
                 , rollbackTipApply = \case
                     At s -> do
                         r <-
@@ -867,28 +818,22 @@ mkSplitUpdate
                                             $ Store.RollbackSucceeded
                                                 0
                                     else
-                                        Store.rollbackTo
+                                        Store.countedRollbackTo
                                             RollbackPoints
+                                            rollbackCounter
                                             ( rollbackRollbackPoint
                                                 kvCSMTOps
                                             )
                                             (At s)
                         case r of
-                            Store.RollbackSucceeded deleted ->
-                                pure
-                                    $ Syncing
-                                    $ goKVOnly
-                                        (count - deleted)
+                            Store.RollbackSucceeded _ ->
+                                pure $ Syncing goKVOnly
                             Store.RollbackImpossible -> do
                                 armageddonCall
-                                pure
-                                    $ Truncating
-                                    $ goKVOnly 0
+                                pure $ Truncating goKVOnly
                     Origin -> do
                         armageddonCall
-                        pure
-                            $ Syncing
-                            $ goKVOnly 0
+                        pure $ Syncing goKVOnly
                 }
         goFull fullCSMTOps =
             mkUpdate

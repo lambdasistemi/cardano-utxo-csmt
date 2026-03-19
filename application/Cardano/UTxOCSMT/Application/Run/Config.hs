@@ -102,6 +102,7 @@ withRocksDB path = do
         , ("rollbacks", config)
         , ("config", config)
         , ("journal", config)
+        , ("metrics", config)
         ]
 
 {- | Default RocksDB configuration.
