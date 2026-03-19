@@ -104,7 +104,17 @@ openCSMTOps
                 b
          -> IO b
        )
-    -- ^ Transaction runner
+    -- ^ Guarded runner for normal ops
+    -> ( forall b
+          . Transaction
+                m
+                cf
+                (Columns slot hash key value)
+                op
+                b
+         -> IO b
+       )
+    -- ^ Unguarded runner for parallel replay
     -> (ReplayEvent -> IO ())
     -- ^ Trace callback (called per replay chunk)
     -> IO

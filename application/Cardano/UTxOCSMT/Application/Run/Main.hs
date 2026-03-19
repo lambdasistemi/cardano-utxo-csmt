@@ -22,6 +22,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Update
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( createSplitUpdateState
     , newRunRocksDBTransaction
+    , newRunRocksDBTransactionUnguarded
     )
 import Cardano.UTxOCSMT.Application.Metrics
     ( MetricsEvent (..)
@@ -175,6 +176,10 @@ main = withUtf8 $ do
                 newRunRocksDBTransaction
                     db
                     prisms
+            let unguardedRunner =
+                    newRunRocksDBTransactionUnguarded
+                        db
+                        prisms
             -- Open ops with crash recovery
             dbState <-
                 openCSMTOps
@@ -184,6 +189,7 @@ main = withUtf8 $ do
                     fkv
                     h
                     (transact runner)
+                    (transact unguardedRunner)
                     (trace . JournalReplay)
             -- Resolve DbState: recover if crashed, then
             -- extract KVOnly ops
