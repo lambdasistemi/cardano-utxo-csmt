@@ -13,6 +13,7 @@ module Cardano.UTxOCSMT.Application.Database.RocksDB
     ( RocksDBTransaction
     , RocksDBQuery
     , newRunRocksDBTransaction
+    , newRunRocksDBTransactionUnguarded
     , newRocksDBState
     , createUpdateState
     , createSplitUpdateState
@@ -89,6 +90,19 @@ newRunTransaction
         )
 newRunTransaction db prisms =
     L.newRunTransaction
+        $ mkRocksDBDatabase db
+        $ mkColumns (columnFamilies db)
+        $ codecs prisms
+
+-- | Create an unguarded 'RunTransaction' for parallel replay.
+newRunRocksDBTransactionUnguarded
+    :: (MonadUnliftIO m, MonadFail m)
+    => DB
+    -> Prisms slot hash key value
+    -> RunTransaction ColumnFamily BatchOp slot hash key value m
+newRunRocksDBTransactionUnguarded db prisms =
+    RunTransaction
+        $ L.runTransactionUnguarded
         $ mkRocksDBDatabase db
         $ mkColumns (columnFamilies db)
         $ codecs prisms
