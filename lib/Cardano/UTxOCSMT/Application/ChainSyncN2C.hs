@@ -68,7 +68,7 @@ mkN2CChainSyncApplication
     -- ^ Action to call when skip phase completes
     -> Maybe SlotNo
     -- ^ Optional skip until slot for Mithril bootstrap
-    -> Intersector Fetched
+    -> Intersector Point SlotNo Fetched
     -- ^ Callback for intersection/following
     -> [Point]
     -- ^ Starting points to find intersection
@@ -90,7 +90,7 @@ mkN2CChainSyncApplication
       where
         n2cIntersect
             :: [Network.Point Block]
-            -> Intersector Fetched
+            -> Intersector Point SlotNo Fetched
             -> N2CIdle
         n2cIntersect points Intersector{intersectFound, intersectNotFound} =
             SendMsgFindIntersect points
@@ -109,7 +109,7 @@ mkN2CChainSyncApplication
                     }
 
         n2cFollow
-            :: Follower Fetched
+            :: Follower Point SlotNo Fetched
             -> Maybe SlotNo
             -- \^ Skip target (Nothing = normal operation)
             -> N2CIdle
@@ -119,7 +119,7 @@ mkN2CChainSyncApplication
                 let
                     checkResult
                         :: Maybe SlotNo
-                        -> IO (ProgressOrRewind Fetched)
+                        -> IO (ProgressOrRewind Point SlotNo Fetched)
                         -> N2CChainSyncApplication
                     checkResult nextTarget getProgressOrRewind =
                         ChainSyncClient $ do

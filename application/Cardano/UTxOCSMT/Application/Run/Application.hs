@@ -100,7 +100,7 @@ intersector
     :: Tracer IO ApplicationTrace
     -> IO ()
     -> DBState
-    -> Intersector Fetched
+    -> Intersector Point SlotNo Fetched
 intersector TraceWith{trace, tracer} trUTxO updater =
     Intersector
         { intersectFound = \point -> do
@@ -122,7 +122,7 @@ follower
     :: Tracer IO ApplicationTrace
     -> IO ()
     -> DBState
-    -> Follower Fetched
+    -> Follower Point SlotNo Fetched
 follower
     TraceWith{trace, tracer}
     trUTxO
@@ -165,9 +165,9 @@ rollingBack
     :: Tracer IO ApplicationTrace
     -> IO ()
     -> Point
-    -> (DBState -> Follower Fetched)
+    -> (DBState -> Follower Point SlotNo Fetched)
     -> DBState
-    -> IO (ProgressOrRewind Fetched)
+    -> IO (ProgressOrRewind Point SlotNo Fetched)
 rollingBack TraceWith{trace, tracer} trUTxO point follower' state = do
     trace $ ApplicationRollingBack point
     case state of

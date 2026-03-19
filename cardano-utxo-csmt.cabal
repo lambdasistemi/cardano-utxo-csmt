@@ -197,6 +197,7 @@ library library
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-shelley
+    , chain-follower
     , cardano-read-ledger
     , cardano-strict-containers
     , cborg

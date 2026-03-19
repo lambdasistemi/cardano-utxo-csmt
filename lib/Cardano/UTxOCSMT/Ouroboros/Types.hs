@@ -37,6 +37,11 @@ module Cardano.UTxOCSMT.Ouroboros.Types
     , Intersector (..)
     ) where
 
+import ChainFollower
+    ( Follower (..)
+    , Intersector (..)
+    , ProgressOrRewind (..)
+    )
 import Ouroboros.Consensus.Cardano.Block qualified as Consensus
 import Ouroboros.Consensus.Protocol.Praos.Header ()
 import Ouroboros.Consensus.Shelley.Ledger.NetworkProtocolVersion ()
@@ -94,20 +99,3 @@ type N2CChainSync =
 -- | N2C ChainSync client application
 type N2CChainSyncApplication =
     ChainSyncClient Block (Network.Point Block) (Network.Tip Block) IO ()
-
-data ProgressOrRewind h
-    = Progress (Follower h)
-    | Rewind [Point] (Intersector h)
-    | Reset (Intersector h)
-
--- | An event representing a roll forward or roll backward in the chain
-data Follower h = Follower
-    { rollForward :: h -> Network.SlotNo -> IO (Follower h)
-    -- ^ Roll forward with header/block and current chain tip slot
-    , rollBackward :: Point -> IO (ProgressOrRewind h)
-    }
-
-data Intersector h = Intersector
-    { intersectFound :: Point -> IO (Follower h)
-    , intersectNotFound :: IO (Intersector h, [Point])
-    }

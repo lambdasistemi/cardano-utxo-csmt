@@ -107,9 +107,9 @@ mkBlockFetchApplication
     -- ^ Action to call when skip phase completes
     -> Maybe SlotNo
     -- ^ Optional skip until slot for Mithril bootstrap
-    -> Intersector Fetched
+    -> Intersector Point SlotNo Fetched
     -- ^ callback to process each fetched block
-    -> IO (BlockFetchApplication, Intersector Header)
+    -> IO (BlockFetchApplication, Intersector Point SlotNo Header)
 mkBlockFetchApplication
     (EventQueueLength maxQueueLen)
     tr
@@ -136,7 +136,7 @@ mkBlockFetchApplication
             )
 
 headerFollower
-    :: MVar (Follower Fetched)
+    :: MVar (Follower Point SlotNo Fetched)
     -> Queue (Point, SlotNo)
     -> Tracer IO HeaderSkipProgress
     -- ^ Tracer for skip progress
@@ -148,7 +148,7 @@ headerFollower
     -- ^ Target slot to skip until (Nothing = no skip)
     -> StrictTVar IO Bool
     -- ^ True while skip is active
-    -> Follower Header
+    -> Follower Point SlotNo Header
 headerFollower
     blockFollowerVar
     queue@Queue{pushQueue, waitEmptyQueue}
@@ -223,7 +223,7 @@ headerFollower
             }
 
 mkHeaderIntersector
-    :: MVar (Follower Fetched)
+    :: MVar (Follower Point SlotNo Fetched)
     -> Queue (Point, SlotNo)
     -> Tracer IO HeaderSkipProgress
     -- ^ Tracer for skip progress
@@ -234,8 +234,8 @@ mkHeaderIntersector
     -> Maybe SlotNo
     -- ^ Target slot to skip until (Nothing = no skip)
     -> StrictTVar IO Bool
-    -> Intersector Fetched
-    -> Intersector Header
+    -> Intersector Point SlotNo Fetched
+    -> Intersector Point SlotNo Header
 mkHeaderIntersector
     blockFollowerVar
     q
@@ -264,7 +264,7 @@ mkHeaderIntersector
                 }
 
 blockFetchReceiver
-    :: MVar (Follower Fetched)
+    :: MVar (Follower Point SlotNo Fetched)
     -> NonEmpty (Point, SlotNo)
     -> IO (BlockFetchReceiver Block IO)
 blockFetchReceiver blockFollowerVar pointsWithTips = do
@@ -297,7 +297,7 @@ blockFetchReceiver blockFollowerVar pointsWithTips = do
 
 blockFetchClient
     :: Tracer IO EventQueueLength
-    -> MVar (Follower Fetched)
+    -> MVar (Follower Point SlotNo Fetched)
     -> Queue (Point, SlotNo)
     -> BlockFetchClient Block Point IO ()
 blockFetchClient tracer blockFollowerVar Queue{flushQueue} = fix $ \go ->
