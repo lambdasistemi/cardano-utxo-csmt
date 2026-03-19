@@ -199,10 +199,10 @@ library library
     , cardano-ledger-core
     , cardano-ledger-shelley
     , cardano-node-clients
-    , chain-follower
     , cardano-read-ledger
     , cardano-strict-containers
     , cborg
+    , chain-follower
     , containers
     , contra-tracer
     , contra-tracer-contrib

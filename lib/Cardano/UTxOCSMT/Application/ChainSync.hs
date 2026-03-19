@@ -93,7 +93,8 @@ next tracer tipTracer follower = ($ follower)
     $ fix
     $ \go (Follower{rollForward, rollBackward}) ->
         let
-            checkResult :: IO (ProgressOrRewind Point SlotNo Header) -> ChainSyncApplication
+            checkResult
+                :: IO (ProgressOrRewind Point SlotNo Header) -> ChainSyncApplication
             checkResult getProgressOrRewind = ChainSyncClient $ do
                 progressOrRewind <- getProgressOrRewind
                 case progressOrRewind of

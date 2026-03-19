@@ -10,6 +10,7 @@ import CSMT ()
 import Cardano.Chain.Slotting (EpochSlots)
 import Cardano.Node.Client.N2C.ChainSync
     ( Fetched (..)
+    , runChainSyncN2C
     )
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength
@@ -35,9 +36,6 @@ import Cardano.UTxOCSMT.Application.UTxOs
     , uTxOsWithTxCount
     )
 import Cardano.UTxOCSMT.Ouroboros.Connection (runNodeApplication)
-import Cardano.Node.Client.N2C.ChainSync
-    ( runChainSyncN2C
-    )
 import Cardano.UTxOCSMT.Ouroboros.Types
     ( Follower (..)
     , Intersector (..)
