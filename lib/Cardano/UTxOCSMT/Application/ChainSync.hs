@@ -55,7 +55,7 @@ mkChainSyncApplication
     -- ^ Tracer for logging received headers
     -> Tracer IO SlotNo
     -- ^ Tracer for chain tip slot updates
-    -> Intersector Header
+    -> Intersector Point SlotNo Header
     -- ^ Callback handlers for intersection results
     -> [Point]
     -- ^ Starting points to find intersection (usually tip + finality)
@@ -69,7 +69,7 @@ intersect
     :: Tracer IO Header
     -> Tracer IO SlotNo
     -> [Point]
-    -> Intersector Header
+    -> Intersector Point SlotNo Header
     -> ClientStIdle Header Point Tip IO ()
 intersect tracer tipTracer points Intersector{intersectFound, intersectNotFound} =
     SendMsgFindIntersect points
@@ -87,13 +87,13 @@ intersect tracer tipTracer points Intersector{intersectFound, intersectNotFound}
 next
     :: Tracer IO Header
     -> Tracer IO SlotNo
-    -> Follower Header
+    -> Follower Point SlotNo Header
     -> ChainSyncIdle
 next tracer tipTracer follower = ($ follower)
     $ fix
     $ \go (Follower{rollForward, rollBackward}) ->
         let
-            checkResult :: IO (ProgressOrRewind Header) -> ChainSyncApplication
+            checkResult :: IO (ProgressOrRewind Point SlotNo Header) -> ChainSyncApplication
             checkResult getProgressOrRewind = ChainSyncClient $ do
                 progressOrRewind <- getProgressOrRewind
                 case progressOrRewind of
