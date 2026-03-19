@@ -1,13 +1,13 @@
 module Control.Foldl.ExtraSpec (spec) where
 
 import Control.Foldl (fold)
-import Control.Foldl.Extra (valueSpeedoMeter)
 import Data.Time
     ( UTCTime
     , addUTCTime
     , secondsToNominalDiffTime
     )
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Tracer.Foldl.Extra (valueSpeedoMeter)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
 -- | A base time for test data

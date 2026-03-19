@@ -49,7 +49,6 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
 import Cardano.UTxOCSMT.Ouroboros.Types (Header, Point)
 import Control.Foldl (Fold (..), handles)
 import Control.Foldl qualified as Fold
-import Control.Foldl.Extra (averageOverWindow, speedoMeter)
 import Control.Lens
     ( APrism'
     , Lens'
@@ -62,6 +61,7 @@ import Control.Lens
 import Data.Profunctor (Profunctor (..))
 import Data.SOP.Strict (index_NS)
 import Data.Time (UTCTime)
+import Data.Tracer.Foldl.Extra (averageOverWindow, speedoMeter)
 import Data.Tracer.Timestamp (Timestamped (..))
 import Ouroboros.Consensus.HardFork.Combinator (OneEraHeader (..))
 import Ouroboros.Consensus.HardFork.Combinator qualified as HF

@@ -50,8 +50,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/contra-tracer-contrib
-  tag: 6b63539fb67c2247d18ef2c4ec86f2f82f3a0d2e
-  --sha256: 16qa1ldd6m3whbs124vj8wbdr3zz4yi4dxsc4x4ny7lk47671n5v
+  tag: f0518e871391133efa10dab5b20a36da7b673389
+  --sha256: 0193m530mx6pgp1d8ms9q91bhr3hqzcg92dirz6j7lw25mx2j3ns
 
 source-repository-package
   type: git
