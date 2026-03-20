@@ -274,12 +274,20 @@ rollbackListPrism hashPrism keyPrism valuePrism =
             [Operation key value]
             (Meta hash)
         -> ByteString
-    encode (UTxOListRP h ops mr) =
+    encode RP.RollbackPoint{rpInverses, rpMeta} =
         encodeCBOR
             $ CBOR.encodeListLen 3
-                <> encodeReview hashPrism h
-                <> encodeOps ops
-                <> encodeMaybe mr
+                <> encodeHash rpMeta
+                <> encodeOps (concat rpInverses)
+                <> encodeMerkle rpMeta
+
+    encodeHash :: Maybe (hash, Maybe hash) -> CBOR.Encoding
+    encodeHash (Just (h, _)) = encodeReview hashPrism h
+    encodeHash Nothing = CBOR.encodeBytes ""
+
+    encodeMerkle :: Maybe (hash, Maybe hash) -> CBOR.Encoding
+    encodeMerkle (Just (_, mr)) = encodeMaybe mr
+    encodeMerkle Nothing = encodeMaybe Nothing
 
     encodeOps :: [Operation key value] -> CBOR.Encoding
     encodeOps ops =
