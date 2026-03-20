@@ -775,7 +775,7 @@ mkSplitUpdate
     -- ^ Save checkpoint (runs inside forwardTip transaction)
     -> m (Update m slot key value)
 mkSplitUpdate
-    tw@TraceWith{contra, trace}
+    TraceWith{contra, trace}
     forwardOps
     ops
     isAtTip
