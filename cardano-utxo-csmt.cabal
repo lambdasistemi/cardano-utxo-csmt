@@ -125,8 +125,8 @@ library application
     , cardano-node-clients
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
-    , chain-follower
     , cborg
+    , chain-follower
     , containers
     , contra-tracer
     , contra-tracer-contrib
@@ -158,6 +158,7 @@ library library
     Cardano.UTxOCSMT.Application.BlockFetch
     Cardano.UTxOCSMT.Application.ChainSync
     Cardano.UTxOCSMT.Application.ChainSyncN2C
+    Cardano.UTxOCSMT.Application.Database.Backend
     Cardano.UTxOCSMT.Application.Database.Implementation.AppConfig
     Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     Cardano.UTxOCSMT.Application.Database.Implementation.Columns
@@ -166,7 +167,6 @@ library library
     Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    Cardano.UTxOCSMT.Application.Database.Backend
     Cardano.UTxOCSMT.Application.Database.Interface
     Cardano.UTxOCSMT.Application.Database.Properties
     Cardano.UTxOCSMT.Application.Database.Properties.Expected
@@ -299,6 +299,7 @@ test-suite unit-tests
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
     , cborg
+    , chain-follower
     , containers
     , contra-tracer
     , contra-tracer-contrib
@@ -312,7 +313,6 @@ test-suite unit-tests
     , memory
     , mempack
     , mts
-    , chain-follower
     , mts:csmt
     , opt-env-conf
     , ouroboros-network-api
@@ -335,8 +335,8 @@ test-suite unit-tests
   type:               exitcode-stdio-1.0
   main-is:            main.hs
   other-modules:
-    Cardano.UTxOCSMT.Application.Database.E2ESpec
     Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
+    Cardano.UTxOCSMT.Application.Database.E2ESpec
     Cardano.UTxOCSMT.Application.Database.RocksDBSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
