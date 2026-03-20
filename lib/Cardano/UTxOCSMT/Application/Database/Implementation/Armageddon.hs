@@ -14,6 +14,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
     )
+import ChainFollower.Rollbacks.Store qualified as Store
 import Control.Monad (when)
 import Control.Monad.Trans (lift)
 import Control.Tracer (Tracer, traceWith)
@@ -28,7 +29,6 @@ import Database.KV.Transaction
     , delete
     , iterating
     )
-import MTS.Rollbacks.Store qualified as Store
 import Ouroboros.Network.Point (WithOrigin (..))
 
 data ArmageddonTrace

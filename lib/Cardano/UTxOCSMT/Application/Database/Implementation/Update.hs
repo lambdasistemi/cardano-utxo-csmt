@@ -3,6 +3,9 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , mkSplitUpdate
     , newSplitState
 
+      -- * Backend/Runner API
+    , mkBackendInit
+
       -- * Phase-aware ops selector
     , Phase (..)
     , SplitMode (..)
@@ -36,7 +39,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
-    , rollbackCounter
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( Meta
@@ -53,6 +55,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , TipOf
     , Update (..)
     )
+import ChainFollower.Backend qualified as Backend
 import Control.Monad (forM, forM_, void, when)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans (lift)
@@ -65,6 +68,9 @@ import MTS.Interface qualified as MTS (Mode (..))
 
 import Data.Monoid (Sum (..))
 
+import ChainFollower.Rollbacks.Store qualified as Store
+import ChainFollower.Rollbacks.Types qualified as RP
+import Data.Function (fix)
 import Data.Tracer.Measure (Timing (..), measureDuration)
 import Data.Tracer.TraceWith
     ( contra
@@ -75,16 +81,17 @@ import Data.Tracer.TraceWith
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
+    , firstEntry
     , lastEntry
+    , nextEntry
     , prevEntry
     )
 import Database.KV.Transaction
     ( Transaction
+    , delete
     , iterating
     , query
     )
-import MTS.Rollbacks.Store qualified as Store
-import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
 {- | Controls which DB operations run inside 'forwardTip'.
@@ -482,7 +489,7 @@ forwardTip
             if doQueryTip
                 then queryTip
                 else pure Origin
-        count <- Store.readCount rollbackCounter
+        count <- Store.countPoints RollbackPoints
         if At slot > tip
             && (not (null ops) || count < 2)
             then do
@@ -552,20 +559,37 @@ updateRollbackPoint
     -> Transaction m cf (Columns slot hash key value) op (Maybe hash)
 updateRollbackPoint rootHashQuery pointHash pointSlot inverseOps = do
     merkleRoot <- rootHashQuery
-    Store.countedStore RollbackPoints rollbackCounter (At pointSlot)
+    Store.storeRollbackPoint RollbackPoints (At pointSlot)
         $ UTxORollbackPoint pointHash inverseOps merkleRoot
     pure merkleRoot
 
 {- | Prune oldest rollback points when count exceeds
 the security parameter k.
+
+Counts total points and prunes the oldest ones,
+keeping at most @securityParam@ entries.
 -}
 pruneExcess
     :: (Ord slot, Monad m)
     => Int
     -> RunTransaction cf op slot hash key value m
     -> m ()
-pruneExcess securityParam RunTransaction{transact} =
-    void $ transact $ Store.pruneExcess RollbackPoints securityParam
+pruneExcess securityParam RunTransaction{transact} = do
+    count <- transact $ Store.countPoints RollbackPoints
+    let excess = count - securityParam
+    when (excess > 0)
+        $ void
+        $ transact
+        $ iterating RollbackPoints
+        $ do
+            me <- firstEntry
+            ($ (me, 0 :: Int)) $ fix $ \go -> \case
+                (Nothing, _) -> pure ()
+                (_, n) | n >= excess -> pure ()
+                (Just Entry{entryKey}, n) -> do
+                    lift $ delete RollbackPoints entryKey
+                    next <- nextEntry
+                    go (next, n + 1)
 
 sampleRollbackPoints
     :: Monad m
@@ -684,9 +708,8 @@ mkUpdate
                                             $ Store.RollbackSucceeded
                                                 0
                                     else
-                                        Store.countedRollbackTo
+                                        Store.rollbackTo
                                             RollbackPoints
-                                            rollbackCounter
                                             ( rollbackRollbackPoint
                                                 ops
                                             )
@@ -818,9 +841,8 @@ mkSplitUpdate
                                             $ Store.RollbackSucceeded
                                                 0
                                     else
-                                        Store.countedRollbackTo
+                                        Store.rollbackTo
                                             RollbackPoints
-                                            rollbackCounter
                                             ( rollbackRollbackPoint
                                                 kvCSMTOps
                                             )
@@ -1039,3 +1061,150 @@ measureUpdateDurations downstream =
         _ -> Nothing
     composeRollback _ (s, n, d, r) =
         UpdateRollbackMeasured s n d r
+
+-- -------------------------------------------------------------------
+-- Backend/Runner API
+-- -------------------------------------------------------------------
+
+{- | Build a 'Backend.Init' for the chain-follower Runner.
+
+The @block@ type is @(slot, [Operation key value])@ — the
+slot and operations extracted from a block.
+
+The @inv@ type is @[Operation key value]@ — inverse
+operations for rollback.
+
+In 'Restoring' mode, blocks are applied via the KVOnly
+path (no CSMT root hash, no inverse computation).
+
+In 'Following' mode, blocks are applied via the Full
+path (CSMT tree maintained, inverse operations returned).
+
+The 'toFollowing' transition replays the MTS journal to
+build the CSMT tree from the KV column — identical to the
+current 'toFull' logic in 'mkSplitUpdate'.
+-}
+mkBackendInit
+    :: ( Ord key
+       , Ord slot
+       , Show slot
+       , MonadFail m
+       , MonadIO m
+       )
+    => Ops
+        'MTS.KVOnly
+        m
+        cf
+        (Columns slot hash key value)
+        op
+        key
+        value
+        hash
+    -- ^ KVOnly ops with built-in replay and transition
+    -> (slot -> hash)
+    -- ^ Slot-to-hash for rollback point metadata
+    -> Backend.Init
+        m
+        ( Transaction
+            m
+            cf
+            (Columns slot hash key value)
+            op
+        )
+        (slot, [Operation key value])
+        [Operation key value]
+mkBackendInit ops slotHash =
+    Backend.Init
+        { Backend.startRestoring =
+            pure $ mkRestoring kvCSMTOps
+        , Backend.resumeFollowing = do
+            mFull <- liftIO (toFull ops)
+            case mFull of
+                Just fullOps ->
+                    pure
+                        $ mkFollowing
+                            (fullOpsToCSMTOps fullOps)
+                Nothing ->
+                    fail
+                        "mkBackendInit: resumeFollowing\
+                        \ toFull failed"
+        }
+  where
+    kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)
+
+    mkRestoring csmtOps =
+        Backend.Restoring
+            { Backend.restore =
+                \(_slot, operations) -> do
+                    forM_ operations $ \case
+                        Insert k v ->
+                            csmtInsert csmtOps k v
+                        Delete k ->
+                            csmtDelete csmtOps k
+                    pure $ mkRestoring csmtOps
+            , Backend.toFollowing = do
+                mFull <- liftIO (toFull ops)
+                case mFull of
+                    Just fullOps ->
+                        pure
+                            $ mkFollowing
+                                (fullOpsToCSMTOps fullOps)
+                    Nothing ->
+                        fail
+                            "mkBackendInit: toFollowing\
+                            \ toFull failed"
+            }
+
+    mkFollowing csmtOps =
+        Backend.Following
+            { Backend.follow =
+                \(slot, operations) -> do
+                    invs <-
+                        forM operations $ \case
+                            Insert k v -> do
+                                csmtInsert csmtOps k v
+                                pure [Delete k]
+                            Delete k -> do
+                                mx <- query KVCol k
+                                csmtDelete csmtOps k
+                                case mx of
+                                    Nothing ->
+                                        error
+                                            $ "mkBackendInit:"
+                                                <> " cannot"
+                                                <> " invert"
+                                                <> " Delete"
+                                                <> " at slot"
+                                                <> " "
+                                                <> show slot
+                                    Just x ->
+                                        pure
+                                            [Insert k x]
+                    let inverseOps =
+                            reverse (concat invs)
+                    merkleRoot <-
+                        csmtRootHash csmtOps
+                    Store.storeRollbackPoint
+                        RollbackPoints
+                        (At slot)
+                        $ UTxORollbackPoint
+                            (slotHash slot)
+                            inverseOps
+                            merkleRoot
+                    pure
+                        ( inverseOps
+                        , mkFollowing csmtOps
+                        )
+            , Backend.toRestoring = do
+                -- Following -> Restoring transition
+                -- shouldn't normally happen, but
+                -- provide the KVOnly ops
+                pure $ mkRestoring kvCSMTOps
+            , Backend.applyInverse =
+                \inverseOps ->
+                    forM_ inverseOps $ \case
+                        Insert k v ->
+                            csmtInsert csmtOps k v
+                        Delete k ->
+                            csmtDelete csmtOps k
+            }

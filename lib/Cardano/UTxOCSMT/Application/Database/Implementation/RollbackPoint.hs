@@ -1,11 +1,11 @@
 {- | Rollback point types and serialization.
 
-Re-exports 'RollbackPoint' from @mts:rollbacks@
+Re-exports 'RollbackPoint' from @chain-follower@
 and provides a pattern synonym for
 backward-compatible field access.
 -}
 module Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( -- * Re-exports from mts:rollbacks
+    ( -- * Re-exports from chain-follower
       RP.RollbackPoint (..)
 
       -- * Pattern synonym
@@ -26,6 +26,8 @@ where
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     )
+import ChainFollower.Rollbacks.Column (RollbackKV)
+import ChainFollower.Rollbacks.Types qualified as RP
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
@@ -39,8 +41,6 @@ import Control.Lens
 import Control.Monad (replicateM)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
-import MTS.Rollbacks.Column (RollbackKV)
-import MTS.Rollbacks.Types qualified as RP
 import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | KV pair for rollback point storage.

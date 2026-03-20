@@ -62,9 +62,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/chain-follower
-  tag: 388a333ecd45e374f7200cebf43c17c0c8bac688
-  --sha256: 17vrpxcn4z6kr4gwyscyy0c45i46idvhf4g41n8xnp1f80p1lm32
+  tag: 17bb165c3dd9c47da9dd54e4f1e75eecf50d2bb6
+  --sha256: 1wc35qrsh3ajwp7idx3wmny6690kivvp8p4b84dqcrcss7a9lgwf
 
 -- Enable iohk flag for contra-tracer-contrib to use CHaP's simple API
 constraints: contra-tracer-contrib +iohk
+
+-- chain-follower has data-default <0.8 but cardano-ledger-shelley pulls 0.8
+allow-newer: chain-follower:data-default
 
