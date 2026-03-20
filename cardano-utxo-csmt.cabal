@@ -105,6 +105,7 @@ library application
   other-modules:    Paths_cardano_utxo_csmt
   exposed-modules:
     Cardano.UTxOCSMT.Application.Run.Application
+    Cardano.UTxOCSMT.Application.Run.Application2
     Cardano.UTxOCSMT.Application.Run.Config
     Cardano.UTxOCSMT.Application.Run.GenesisData
     Cardano.UTxOCSMT.Application.Run.Main
@@ -124,6 +125,7 @@ library application
     , cardano-node-clients
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
+    , chain-follower
     , cborg
     , containers
     , contra-tracer
