@@ -36,11 +36,13 @@ import Cardano.UTxOCSMT.Application.Database.Interface
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
     )
+import Cardano.UTxOCSMT.Application.UTxOs (unsafeMkTxIn)
 import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as Store
 import ChainFollower.Runner
     ( Phase (..)
     , processBlock
+    , pruneOldPoints
     , rollbackTo
     )
 import Codec.CBOR.Decoding qualified as CBOR
@@ -49,8 +51,10 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
 import Control.Monad (forM, forM_)
+import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
+import Data.ByteString.Short (toShort)
 import Database.KV.Database (mkColumns)
 import Database.KV.RocksDB (mkRocksDBDatabase)
 import Database.KV.Transaction qualified as KV
@@ -394,3 +398,126 @@ spec = describe "E2E Runner" $ do
                     $ Store.queryHistory Rollbacks
             -- Should have sentinel + 1 block = 2 entries
             length history `shouldBe` 2
+
+    it "forward + finality pruning" $ do
+        withFreshDB $ \phase transact -> do
+            -- Follow 3 blocks
+            phase1 <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 1))
+                        (SlotNo 1, [])
+                        phase
+            phase2 <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 2))
+                        (SlotNo 2, [])
+                        phase1
+            _ <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 3))
+                        (SlotNo 3, [])
+                        phase2
+            -- Prune below slot 2 (finality)
+            pruned <-
+                transact
+                    $ pruneOldPoints
+                        Rollbacks
+                        (At (SlotNo 2))
+            -- Origin + slot 1 should be pruned
+            pruned `shouldBe` 2
+            -- Only slot 2 and 3 remain
+            history <-
+                transact
+                    $ Store.queryHistory Rollbacks
+            length history `shouldBe` 2
+
+    it "preprod block crash scenario" $ do
+        let hex s = case B16.decode (BC.pack s) of
+                Right bs -> bs
+                Left e -> error e
+            txIn txid =
+                unsafeMkTxIn (toShort $ hex txid)
+            key366b_0 =
+                txIn
+                    "366b3fa797964f629662812c\
+                    \15c1989a2b5aead30344f2d7\
+                    \ccf40bf4611c3c79"
+                    0
+            keyd4be_0 =
+                txIn
+                    "d4bebf0c9b57c3e7ae745b39\
+                    \337920b9d7dc2a2b61eb78e3\
+                    \9d88bcc59ae7693a"
+                    0
+            keyd4be_1 =
+                txIn
+                    "d4bebf0c9b57c3e7ae745b39\
+                    \337920b9d7dc2a2b61eb78e3\
+                    \9d88bcc59ae7693a"
+                    1
+            keyb768_0 =
+                txIn
+                    "b76811c33424b8cf7b61a285\
+                    \152715f5a7f40e89f68a7782\
+                    \c5df515146e2413f"
+                    0
+            keyb768_1 =
+                txIn
+                    "b76811c33424b8cf7b61a285\
+                    \152715f5a7f40e89f68a7782\
+                    \c5df515146e2413f"
+                    1
+        withFreshDB $ \phase transact -> do
+            -- Bootstrap: insert what block 282639 needs
+            phase1 <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 1))
+                        ( SlotNo 1
+                        , [Insert key366b_0 "out-366b-0"]
+                        )
+                        phase
+            -- Block 282639: 1 delete + 2 inserts
+            phase2 <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 12903843))
+                        ( SlotNo 12903843
+                        ,
+                            [ Delete key366b_0
+                            , Insert keyd4be_0 "out-d4be-0"
+                            , Insert keyd4be_1 "out-d4be-1"
+                            ]
+                        )
+                        phase1
+            -- Block 283086: delete d4be#1
+            _ <-
+                transact
+                    $ processBlock
+                        Rollbacks
+                        (At (SlotNo 12912634))
+                        ( SlotNo 12912634
+                        ,
+                            [ Delete keyd4be_1
+                            , Insert keyb768_0 "out-b768-0"
+                            , Insert keyb768_1 "out-b768-1"
+                            ]
+                        )
+                        phase2
+            pure ()
+
+    it "rollback points queryTip on fresh DB" $ do
+        withFreshDB $ \_phase transact -> do
+            mTip <-
+                transact
+                    $ Store.queryTip Rollbacks
+            -- Fresh DB has sentinel at Origin
+            mTip `shouldBe` Just Origin
