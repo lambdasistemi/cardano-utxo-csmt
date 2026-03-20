@@ -164,6 +164,7 @@ library library
     Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     Cardano.UTxOCSMT.Application.Database.Implementation.Update
+    Cardano.UTxOCSMT.Application.Database.Backend
     Cardano.UTxOCSMT.Application.Database.Interface
     Cardano.UTxOCSMT.Application.Database.Properties
     Cardano.UTxOCSMT.Application.Database.Properties.Expected

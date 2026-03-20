@@ -27,6 +27,11 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Update
     , updateRollbackPoint
     , sampleRollbackPoints
     , newState
+
+      -- * CSMT ops helpers (for Backend module)
+    , fullOpsToCSMTOps
+    , kvCommon
+    , kvCommonToCSMTOps
     )
 where
 
@@ -855,6 +860,7 @@ mkSplitUpdate
                                                )
                                             then do
                                                 ( _inv
+                                                    , _meta
                                                     , nextFollowing
                                                     ) <-
                                                     Backend.follow
@@ -1206,6 +1212,7 @@ mkBackendInit
         )
         (slot, [Operation key value])
         [Operation key value]
+        ()
 mkBackendInit ops slotHash =
     Backend.Init
         { Backend.startRestoring =
@@ -1286,6 +1293,7 @@ mkBackendInit ops slotHash =
                             merkleRoot
                     pure
                         ( inverseOps
+                        , Nothing
                         , mkFollowing csmtOps
                         )
             , Backend.toRestoring = do
