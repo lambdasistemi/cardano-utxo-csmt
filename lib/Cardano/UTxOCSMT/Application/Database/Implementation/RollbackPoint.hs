@@ -19,6 +19,7 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
 
       -- * Serialization
     , rollbackPointPrism
+    , rollbackListPrism
     , withOriginPrism
     )
 where
@@ -242,3 +243,118 @@ withOriginPrism slotP = prism' encode decode
                 fail
                     "withOriginPrism:\
                     \ unexpected token"
+
+{- | Prism for the new rollback column where
+@inv = [Operation key value]@. Same CBOR format as
+'rollbackPointPrism' but wraps the ops list in
+@rpInverses = [ops]@ (one block = one inv).
+-}
+
+{- | Prism for the new rollback column where
+@inv = [Operation key value]@. Same CBOR format as
+'rollbackPointPrism' but wraps the ops list in
+@rpInverses = [ops]@ (one block = one inv).
+-}
+rollbackListPrism
+    :: forall hash key value
+     . Prism' ByteString hash
+    -> Prism' ByteString key
+    -> Prism' ByteString value
+    -> Prism'
+        ByteString
+        ( RP.RollbackPoint
+            [Operation key value]
+            (Meta hash)
+        )
+rollbackListPrism hashPrism keyPrism valuePrism =
+    prism' encode decode
+  where
+    encode
+        :: RP.RollbackPoint
+            [Operation key value]
+            (Meta hash)
+        -> ByteString
+    encode (UTxOListRP h ops mr) =
+        encodeCBOR
+            $ CBOR.encodeListLen 3
+                <> encodeReview hashPrism h
+                <> encodeOps ops
+                <> encodeMaybe mr
+
+    encodeOps :: [Operation key value] -> CBOR.Encoding
+    encodeOps ops =
+        CBOR.encodeListLen
+            (fromIntegral $ length ops)
+            <> foldMap encodeOp ops
+
+    encodeOp :: Operation key value -> CBOR.Encoding
+    encodeOp (Delete k) =
+        CBOR.encodeListLen 2
+            <> CBOR.encodeWord 0
+            <> encodeReview keyPrism k
+    encodeOp (Insert k v) =
+        CBOR.encodeListLen 3
+            <> CBOR.encodeWord 1
+            <> encodeReview keyPrism k
+            <> encodeReview valuePrism v
+
+    encodeMaybe :: Maybe hash -> CBOR.Encoding
+    encodeMaybe Nothing = CBOR.encodeListLen 0
+    encodeMaybe (Just h) =
+        CBOR.encodeListLen 1
+            <> encodeReview hashPrism h
+
+    decode
+        :: ByteString
+        -> Maybe
+            ( RP.RollbackPoint
+                [Operation key value]
+                (Meta hash)
+            )
+    decode = decodeCBOR $ do
+        _ <- CBOR.decodeListLen
+        h <- decodePreview hashPrism
+        opsLen <- CBOR.decodeListLen
+        ops <- replicateM opsLen decodeOp
+        mbLen <- CBOR.decodeListLen
+        mr <- case mbLen of
+            0 -> pure Nothing
+            1 -> Just <$> decodePreview hashPrism
+            _ ->
+                fail
+                    "rollbackListPrism: invalid\
+                    \ merkle root array length"
+        pure $ UTxOListRP h ops mr
+
+    decodeOp :: CBOR.Decoder s (Operation key value)
+    decodeOp = do
+        len <- CBOR.decodeListLen
+        tag <- CBOR.decodeWord
+        case (tag, len) of
+            (0, 2) -> Delete <$> decodePreview keyPrism
+            (1, 3) ->
+                Insert
+                    <$> decodePreview keyPrism
+                    <*> decodePreview valuePrism
+            _ ->
+                fail
+                    "rollbackListPrism: invalid\
+                    \ operation"
+
+-- | Pattern for the new rollback point type.
+pattern UTxOListRP
+    :: hash
+    -> [Operation key value]
+    -> Maybe hash
+    -> RP.RollbackPoint [Operation key value] (Meta hash)
+pattern UTxOListRP h ops mr <-
+    RP.RollbackPoint
+        { rpInverses = [ops]
+        , rpMeta = Just (h, mr)
+        }
+    where
+        UTxOListRP h ops mr =
+            RP.RollbackPoint
+                { rpInverses = [ops]
+                , rpMeta = Just (h, mr)
+                }

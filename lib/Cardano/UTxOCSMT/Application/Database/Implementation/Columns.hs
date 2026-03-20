@@ -12,9 +12,14 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( RollbackPointKV
+    , rollbackListPrism
     , rollbackPointPrism
     , withOriginPrism
     )
+import Cardano.UTxOCSMT.Application.Database.Interface
+    ( Operation
+    )
+import ChainFollower.Rollbacks.Column (RollbackKV)
 import Control.Lens (Prism', prism', type (:~:) (Refl))
 import Data.ByteString (ByteString)
 import Database.KV.Transaction
@@ -27,6 +32,7 @@ import Database.KV.Transaction
     , KV
     , fromList
     )
+import Ouroboros.Network.Point (WithOrigin)
 
 -- | Single key for application configuration
 data ConfigKey = AppConfigKey
@@ -58,6 +64,18 @@ data Columns slot hash key value x where
     JournalCol
         :: Columns slot hash key value (KV key ByteString)
         -- ^ Journal column for KVOnly mode replay
+    Rollbacks
+        :: Columns
+            slot
+            hash
+            key
+            value
+            ( RollbackKV
+                (WithOrigin slot)
+                [Operation key value]
+                (hash, Maybe hash)
+            )
+        -- ^ New rollback column for Runner API
 
 instance GEq (Columns slot hash key value) where
     geq KVCol KVCol = Just Refl
@@ -65,6 +83,7 @@ instance GEq (Columns slot hash key value) where
     geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
     geq JournalCol JournalCol = Just Refl
+    geq Rollbacks Rollbacks = Just Refl
     geq _ _ = Nothing
 
 instance GCompare (Columns slot hash key value) where
@@ -81,7 +100,10 @@ instance GCompare (Columns slot hash key value) where
     gcompare ConfigCol ConfigCol = GEQ
     gcompare ConfigCol _ = GLT
     gcompare JournalCol JournalCol = GEQ
+    gcompare JournalCol Rollbacks = GLT
     gcompare JournalCol _ = GGT
+    gcompare Rollbacks Rollbacks = GEQ
+    gcompare Rollbacks _ = GGT
 
 -- | Prisms for serializing/deserializing keys and values
 data Prisms slot hash key value = Prisms
@@ -113,5 +135,11 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
             :=> Codecs
                 { keyCodec = keyP
                 , valueCodec = prism' id Just
+                }
+        , Rollbacks
+            :=> Codecs
+                { keyCodec = withOriginPrism slotP
+                , valueCodec =
+                    rollbackListPrism hashP keyP valueP
                 }
         ]
