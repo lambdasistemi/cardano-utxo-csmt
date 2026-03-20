@@ -436,9 +436,9 @@ newSplitState
                     Nothing ->
                         fail
                             "newSplitState: toFull failed"
-            else
-                pure
-                    ( mkSplitUpdate
+            else do
+                update <-
+                    mkSplitUpdate
                         tw
                         forwardOps
                         ops
@@ -449,8 +449,7 @@ newSplitState
                         runTransaction
                         securityParam
                         saveCheckpoint
-                    , cps
-                    )
+                pure (update, cps)
 
 -- | Apply forward tip.
 forwardTip
@@ -774,7 +773,7 @@ mkSplitUpdate
                 ()
        )
     -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> Update m slot key value
+    -> m (Update m slot key value)
 mkSplitUpdate
     tw@TraceWith{contra, trace}
     forwardOps
@@ -785,94 +784,188 @@ mkSplitUpdate
     armageddonParams
     runTransaction@RunTransaction{transact}
     securityParam
-    saveCheckpoint =
-        goKVOnly
+    saveCheckpoint = do
+        restoring0 <-
+            Backend.startRestoring backendInit
+        phaseRef <-
+            liftIO $ newIORef (Left restoring0)
+        pure $ goPhase phaseRef
       where
-        kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)
-        goKVOnly =
+        backendInit = mkBackendInit ops slotHash
+
+        goPhase phaseRef =
             Update
                 { forwardTipApply =
                     \slot chainTip operations -> do
+                        phase <- liftIO $ readIORef phaseRef
                         trace $ UpdateTransactBegin slot
-                        stored <-
-                            transact $ do
-                                r <-
-                                    forwardTip
-                                        tw
-                                        kvOnlyForwardOps
-                                        kvCSMTOps
-                                        (slotHash slot)
-                                        slot
-                                        operations
-                                saveCheckpoint slot
-                                pure r
-                        trace $ UpdateTransactDone slot
-                        onForward slot chainTip
-                        when stored
-                            $ void
-                            $ pruneExcess
-                                securityParam
-                                runTransaction
-                        if isAtTip slot chainTip
-                            then do
-                                trace UpdateJournalReplay
-                                mFull <-
-                                    liftIO (toFull ops)
-                                case mFull of
-                                    Just fullOps ->
-                                        pure
-                                            $ goFull
-                                                ( fullOpsToCSMTOps
-                                                    fullOps
+                        case phase of
+                            Left restoring -> do
+                                -- Restoring (KVOnly): fast
+                                -- ingest, no rollback storage
+                                nextRestoring <-
+                                    transact $ do
+                                        r <-
+                                            Backend.restore
+                                                restoring
+                                                ( slot
+                                                , operations
                                                 )
-                                    Nothing ->
-                                        fail
-                                            "mkSplitUpdate: toFull failed"
-                            else
-                                pure goKVOnly
+                                        saveCheckpoint slot
+                                        pure r
+                                trace
+                                    $ UpdateTransactDone slot
+                                onForward slot chainTip
+                                if isAtTip slot chainTip
+                                    then do
+                                        trace
+                                            UpdateJournalReplay
+                                        following <-
+                                            Backend.toFollowing
+                                                nextRestoring
+                                        liftIO
+                                            $ writeIORef
+                                                phaseRef
+                                                (Right following)
+                                    else
+                                        liftIO
+                                            $ writeIORef
+                                                phaseRef
+                                                ( Left
+                                                    nextRestoring
+                                                )
+                                pure $ goPhase phaseRef
+                            Right following -> do
+                                -- Following (Full): CSMT +
+                                -- rollback point storage
+                                stored <-
+                                    transact $ do
+                                        tip <-
+                                            if doQueryTip
+                                                forwardOps
+                                                then queryTip
+                                                else pure Origin
+                                        count <-
+                                            Store.countPoints
+                                                RollbackPoints
+                                        if At slot > tip
+                                            && ( not
+                                                    (null operations)
+                                                    || count < 2
+                                               )
+                                            then do
+                                                ( _inv
+                                                    , nextFollowing
+                                                    ) <-
+                                                    Backend.follow
+                                                        following
+                                                        ( slot
+                                                        , operations
+                                                        )
+                                                saveCheckpoint
+                                                    slot
+                                                liftIO
+                                                    $ writeIORef
+                                                        phaseRef
+                                                        ( Right
+                                                            nextFollowing
+                                                        )
+                                                pure True
+                                            else do
+                                                saveCheckpoint
+                                                    slot
+                                                pure False
+                                trace
+                                    $ UpdateTransactDone slot
+                                onForward slot chainTip
+                                when stored
+                                    $ void
+                                    $ pruneExcess
+                                        securityParam
+                                        runTransaction
+                                pure $ goPhase phaseRef
                 , rollbackTipApply = \case
                     At s -> do
-                        r <-
-                            transact $ do
-                                tip <- queryTip
-                                if At s > tip
-                                    then
-                                        pure
-                                            $ Store.RollbackSucceeded
-                                                0
-                                    else
-                                        Store.rollbackTo
-                                            RollbackPoints
-                                            ( rollbackRollbackPoint
-                                                kvCSMTOps
-                                            )
-                                            (At s)
-                        case r of
-                            Store.RollbackSucceeded _ ->
-                                pure $ Syncing goKVOnly
-                            Store.RollbackImpossible -> do
+                        phase <-
+                            liftIO $ readIORef phaseRef
+                        case phase of
+                            Left _ -> do
+                                -- In Restoring phase,
+                                -- rollback is armageddon
                                 armageddonCall
-                                pure $ Truncating goKVOnly
+                                restoring <-
+                                    Backend.startRestoring
+                                        backendInit
+                                liftIO
+                                    $ writeIORef
+                                        phaseRef
+                                        (Left restoring)
+                                pure
+                                    $ Truncating
+                                    $ goPhase phaseRef
+                            Right following -> do
+                                r <-
+                                    transact $ do
+                                        tip <- queryTip
+                                        if At s > tip
+                                            then
+                                                pure
+                                                    $ Store.RollbackSucceeded
+                                                        0
+                                            else
+                                                Store.rollbackTo
+                                                    RollbackPoints
+                                                    ( Backend.applyInverse
+                                                        following
+                                                        . rpInverse
+                                                    )
+                                                    (At s)
+                                case r of
+                                    Store.RollbackSucceeded
+                                        _ ->
+                                            pure
+                                                $ Syncing
+                                                $ goPhase
+                                                    phaseRef
+                                    Store.RollbackImpossible ->
+                                        do
+                                            armageddonCall
+                                            restoring <-
+                                                Backend.startRestoring
+                                                    backendInit
+                                            liftIO
+                                                $ writeIORef
+                                                    phaseRef
+                                                    ( Left
+                                                        restoring
+                                                    )
+                                            pure
+                                                $ Truncating
+                                                $ goPhase
+                                                    phaseRef
                     Origin -> do
                         armageddonCall
-                        pure $ Syncing goKVOnly
+                        restoring <-
+                            Backend.startRestoring
+                                backendInit
+                        liftIO
+                            $ writeIORef
+                                phaseRef
+                                (Left restoring)
+                        pure
+                            $ Syncing
+                            $ goPhase phaseRef
                 }
-        goFull fullCSMTOps =
-            mkUpdate
-                tw
-                forwardOps
-                fullCSMTOps
-                slotHash
-                onForward
-                armageddonParams
-                runTransaction
-                securityParam
-                saveCheckpoint
+
         armageddonCall =
             armageddon
                 (contra UpdateArmageddon)
                 runTransaction
                 armageddonParams
+
+        -- Extract inverse ops from a rollback point
+        rpInverse (UTxORollbackPoint _ inverseOps _) =
+            inverseOps
 
 -- | Sync phase for split-mode bootstrap.
 data Phase = KVOnly | Full
