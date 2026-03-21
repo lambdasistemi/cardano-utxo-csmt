@@ -62,8 +62,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/chain-follower
-  tag: 551b85d36c0d08fe6751d24a486153900f6f1e95
-  --sha256: 07zab92bzbrgwxkjs6dmf5935rbcj4liwjxgby323855r4974bb7
+  tag: 5f13cf8c408aadd78c45e7828a02bdc6d490ea2c
+  --sha256: 0x0wa5ws20073d1kispb2iacsfw4xa2vwc3r1mcds2qgll7j5zy8
 
 -- Enable iohk flag for contra-tracer-contrib to use CHaP's simple API
 constraints: contra-tracer-contrib +iohk
