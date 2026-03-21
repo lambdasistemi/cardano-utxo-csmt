@@ -7,7 +7,7 @@ module Cardano.UTxOCSMT.Application.Database.Backend
     , Runner.Phase (..)
     , Runner.processBlock
     , Runner.rollbackTo
-    , Runner.pruneOldPoints
+    , Runner.rollbackCount
     , Store.RollbackResult (..)
     , Store.queryTip
     , Store.armageddonCleanup

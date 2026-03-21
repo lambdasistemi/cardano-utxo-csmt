@@ -60,10 +60,10 @@ import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as Store
 import ChainFollower.Runner (Phase (..))
 import Control.Exception (throwIO)
-import Control.Monad (replicateM_, when)
+import Control.Monad (replicateM_)
 import Control.Tracer (Tracer (..))
 import Data.ByteString.Lazy (ByteString)
-import Data.Function (fix)
+
 import Data.Tracer.TraceWith
     ( contra
     , trace
@@ -164,6 +164,8 @@ intersector
         [Operation ByteString ByteString]
         (ByteString, Maybe ByteString)
     -> ArmageddonParams ByteString
+    -> Int
+    -- ^ Security parameter (stability window)
     -> AppPhase
     -> Intersector Point SlotNo Fetched
 intersector
@@ -172,6 +174,7 @@ intersector
     runner
     backendInit
     armageddonParams
+    securityParam
     phase =
         Intersector
             { intersectFound = \point -> do
@@ -183,6 +186,7 @@ intersector
                         runner
                         backendInit
                         armageddonParams
+                        securityParam
                         phase
             , intersectNotFound = do
                 trace ApplicationIntersectionFailed
@@ -193,6 +197,7 @@ intersector
                         runner
                         backendInit
                         armageddonParams
+                        securityParam
                         phase
                     , [origin]
                     )
@@ -218,6 +223,8 @@ follower
         [Operation ByteString ByteString]
         (ByteString, Maybe ByteString)
     -> ArmageddonParams ByteString
+    -> Int
+    -- ^ Security parameter (stability window)
     -> AppPhase
     -> Follower Point SlotNo Fetched
 follower
@@ -225,7 +232,8 @@ follower
     trUTxO
     runner@RunTransaction{transact}
     backendInit
-    armageddonParams =
+    armageddonParams
+    securityParam =
         go
       where
         go phase =
@@ -251,6 +259,7 @@ follower
                             transact
                                 $ processBlock
                                     Rollbacks
+                                    securityParam
                                     (At fetchedPoint)
                                     (fetchedPoint, ops)
                                     phase
@@ -258,18 +267,20 @@ follower
                 , rollBackward = \point -> do
                     trace $ ApplicationRollingBack point
                     case phase of
-                        InFollowing f -> do
-                            result <-
+                        InFollowing n f -> do
+                            (result, n') <-
                                 transact
                                     $ rollbackTo
                                         Rollbacks
                                         f
+                                        n
                                         (At point)
                             case result of
                                 Store.RollbackSucceeded _ ->
                                     pure
                                         $ Progress
-                                        $ go phase
+                                        $ go
+                                            (InFollowing n' f)
                                 Store.RollbackImpossible -> do
                                     armageddon
                                         (Tracer $ const $ pure ())
@@ -286,15 +297,13 @@ follower
                                             runner
                                             backendInit
                                             armageddonParams
-                                            (InRestoration restoring)
-                        InRestoration _ ->
+                                            securityParam
+                                            (InRestoration 0 restoring)
+                        InRestoration _ _ ->
                             error
                                 "follower: cannot roll back\
                                 \ in restoration mode"
                 }
-
-        armageddonTrace :: ApplicationTrace
-        armageddonTrace = ApplicationRollingBack origin
 
 application2
     :: EpochSlots
@@ -323,6 +332,8 @@ application2
         [Operation ByteString ByteString]
         (ByteString, Maybe ByteString)
     -> ArmageddonParams ByteString
+    -> Int
+    -- ^ Security parameter (stability window)
     -> AppPhase
     -> [Point]
     -> IO Void
@@ -339,6 +350,7 @@ application2
     runner
     backendInit
     armageddonParams
+    securityParam
     initialPhase
     availablePoints =
         do
@@ -362,6 +374,7 @@ application2
                         runner
                         backendInit
                         armageddonParams
+                        securityParam
                         initialPhase
             let chainFollowingApplication =
                     mkChainSyncApplication
@@ -415,6 +428,8 @@ applicationN2C2
         [Operation ByteString ByteString]
         (ByteString, Maybe ByteString)
     -> ArmageddonParams ByteString
+    -> Int
+    -- ^ Security parameter (stability window)
     -> AppPhase
     -> [Point]
     -> IO Void
@@ -429,6 +444,7 @@ applicationN2C2
     runner
     backendInit
     armageddonParams
+    securityParam
     initialPhase
     availablePoints =
         do
@@ -444,6 +460,7 @@ applicationN2C2
                         runner
                         backendInit
                         armageddonParams
+                        securityParam
                         initialPhase
                 points =
                     if null availablePoints

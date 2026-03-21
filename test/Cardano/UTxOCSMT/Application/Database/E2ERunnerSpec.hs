@@ -255,7 +255,7 @@ withFreshDB action =
                         Nothing
                 -- Start in following mode
                 let phase =
-                        InFollowing (mkFollowing csmtOps)
+                        InFollowing 1 (mkFollowing csmtOps)
                 action phase transact
 
 spec :: Spec
@@ -266,6 +266,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         (SlotNo 1, [])
                         phase
@@ -280,6 +281,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key1 val1]
@@ -292,6 +294,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 2))
                         ( SlotNo 2
                         , [Insert key2 val2]
@@ -299,19 +302,20 @@ spec = describe "E2E Runner" $ do
                         phase1
             -- Rollback to slot 1
             case phase2 of
-                InFollowing f -> do
-                    result <-
+                InFollowing n f -> do
+                    (result, _) <-
                         transact
                             $ rollbackTo
                                 Rollbacks
                                 f
+                                n
                                 (At (SlotNo 1))
                     case result of
-                        Store.RollbackSucceeded n ->
-                            n `shouldBe` 1
+                        Store.RollbackSucceeded deleted ->
+                            deleted `shouldBe` 1
                         Store.RollbackImpossible ->
                             fail "unexpected RollbackImpossible"
-                InRestoration _ ->
+                InRestoration _ _ ->
                     fail "expected Following"
 
     it "multiple forwards with inserts and deletes"
@@ -359,23 +363,25 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         (SlotNo 1, [])
                         phase
             case phase1 of
-                InFollowing f -> do
-                    result <-
+                InFollowing n f -> do
+                    (result, _) <-
                         transact
                             $ rollbackTo
                                 Rollbacks
                                 f
+                                n
                                 Origin
                     case result of
                         Store.RollbackSucceeded _ ->
                             pure ()
                         Store.RollbackImpossible ->
                             fail "unexpected RollbackImpossible"
-                InRestoration _ ->
+                InRestoration _ _ ->
                     fail "expected Following"
 
     it "queryHistory returns metadata" $ do
@@ -387,6 +393,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key1 val1]
@@ -406,6 +413,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         (SlotNo 1, [])
                         phase
@@ -413,6 +421,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 2))
                         (SlotNo 2, [])
                         phase1
@@ -420,6 +429,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 3))
                         (SlotNo 3, [])
                         phase2
@@ -479,6 +489,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key366b_0 "out-366b-0"]
@@ -489,6 +500,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 12903843))
                         ( SlotNo 12903843
                         ,
@@ -503,6 +515,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
+                        maxBound
                         (At (SlotNo 12912634))
                         ( SlotNo 12912634
                         ,
