@@ -63,7 +63,6 @@ import MTS.Interface qualified as MTS (Mode (..))
 -- | Create the backend Init for UTxO CSMT.
 createBackend
     :: ( Ord key
-       , Ord slot
        , Show slot
        , MonadFail m
        , MonadIO m
