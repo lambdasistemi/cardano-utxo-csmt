@@ -19,7 +19,6 @@ import CSMT.Hashes
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     , Prisms (..)
-    , codecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
