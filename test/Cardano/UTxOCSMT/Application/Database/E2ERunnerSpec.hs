@@ -149,6 +149,43 @@ type TestPhase =
         [Operation BL.ByteString BL.ByteString]
         (Hash, Maybe Hash)
 
+-- | Build a Restoring continuation from CSMTOps.
+mkRestoring
+    :: CSMTOps
+        ( KV.Transaction
+            IO
+            ColumnFamily
+            Cols
+            BatchOp
+        )
+        BL.ByteString
+        BL.ByteString
+        Hash
+    -> Backend.Restoring
+        IO
+        ( KV.Transaction
+            IO
+            ColumnFamily
+            Cols
+            BatchOp
+        )
+        (SlotNo, [Operation BL.ByteString BL.ByteString])
+        [Operation BL.ByteString BL.ByteString]
+        (Hash, Maybe Hash)
+mkRestoring csmtOps =
+    Backend.Restoring
+        { Backend.restore =
+            \(_slot, operations) -> do
+                forM_ operations $ \case
+                    Insert k v ->
+                        csmtInsert csmtOps k v
+                    Delete k ->
+                        csmtDelete csmtOps k
+                pure $ mkRestoring csmtOps
+        , Backend.toFollowing =
+            pure $ mkFollowing csmtOps
+        }
+
 -- | Build a Following continuation from CSMTOps.
 mkFollowing
     :: CSMTOps
@@ -251,6 +288,37 @@ withFreshDB action =
                 -- Start in following mode
                 let phase =
                         InFollowing 1 (mkFollowing csmtOps)
+                action phase transact
+
+-- | Set up a fresh DB starting in Restoration mode.
+withFreshDBRestoration
+    :: ( TestPhase
+         -> (forall a. Tx a -> IO a)
+         -> IO r
+       )
+    -> IO r
+withFreshDBRestoration action =
+    withSystemTempDirectory "e2e-runner-restore" $ \dir ->
+        withDBCF
+            dir
+            testConfig
+            [ ("kv", testConfig)
+            , ("csmt", testConfig)
+            , ("rollbacks", testConfig)
+            , ("config", testConfig)
+            , ("journal", testConfig)
+            , ("rollbacks2", testConfig)
+            ]
+            $ \db -> do
+                RunTransaction{transact} <-
+                    newRunRocksDBTransaction
+                        db
+                        testPrisms
+                let csmtOps =
+                        mkCSMTOps testFromKV testHashing
+                -- No sentinel — fresh DB, restoration mode
+                let phase =
+                        InRestoration 0 (mkRestoring csmtOps)
                 action phase transact
 
 spec :: Spec
@@ -525,3 +593,169 @@ spec = describe "E2E Runner" $ do
                     $ Store.queryTip Rollbacks
             -- Fresh DB has sentinel at Origin
             mTip `shouldBe` Just Origin
+
+    describe "Restoration mode" $ do
+        it "processes blocks in restoration" $ do
+            withFreshDBRestoration $ \phase transact -> do
+                let key1 = mkTestKey "utxo1"
+                    val1 = mkTestValue "output1"
+                phase1 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 1))
+                            ( SlotNo 1
+                            , [Insert key1 val1]
+                            )
+                            phase
+                -- Should stay in restoration
+                case phase1 of
+                    InRestoration _ _ -> pure ()
+                    InFollowing _ _ ->
+                        fail "expected Restoration"
+
+        it "restoration stores no rollback points" $ do
+            withFreshDBRestoration $ \phase transact -> do
+                _ <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 1))
+                            (SlotNo 1, [Insert (mkTestKey "k") (mkTestValue "v")])
+                            phase
+                -- Rollback column should be empty
+                count <-
+                    transact
+                        $ Store.countPoints Rollbacks
+                count `shouldBe` 0
+
+        it "restoration then transition to following" $ do
+            withFreshDBRestoration $ \phase transact -> do
+                let key1 = mkTestKey "utxo1"
+                    val1 = mkTestValue "output1"
+                -- Restore a block
+                phase1 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 1))
+                            ( SlotNo 1
+                            , [Insert key1 val1]
+                            )
+                            phase
+                -- Transition to Following
+                case phase1 of
+                    InRestoration _ restoring -> do
+                        following <-
+                            Backend.toFollowing restoring
+                        let phase2 =
+                                InFollowing 0 following
+                        -- Process another block in Following
+                        phase3 <-
+                            transact
+                                $ processBlock
+                                    Rollbacks
+                                    maxBound
+                                    (At (SlotNo 2))
+                                    ( SlotNo 2
+                                    , [Insert (mkTestKey "utxo2") (mkTestValue "output2")]
+                                    )
+                                    phase2
+                        -- Should now have a rollback point
+                        case phase3 of
+                            InFollowing n _ ->
+                                n `shouldBe` 1
+                            InRestoration _ _ ->
+                                fail "expected Following"
+                    InFollowing _ _ ->
+                        fail "expected Restoration"
+
+        it "multiple blocks in restoration then follow + rollback" $ do
+            withFreshDBRestoration $ \phase transact -> do
+                -- Restore 3 blocks
+                phase1 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 1))
+                            ( SlotNo 1
+                            , [Insert (mkTestKey "utxo1") (mkTestValue "out1")]
+                            )
+                            phase
+                phase2 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 2))
+                            ( SlotNo 2
+                            , [Insert (mkTestKey "utxo2") (mkTestValue "out2")]
+                            )
+                            phase1
+                phase3 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 3))
+                            ( SlotNo 3
+                            , [Insert (mkTestKey "utxo3") (mkTestValue "out3")]
+                            )
+                            phase2
+                -- Transition to Following
+                case phase3 of
+                    InRestoration _ restoring -> do
+                        following <-
+                            Backend.toFollowing restoring
+                        -- Set up sentinel for rollback
+                        transact
+                            $ Store.armageddonSetup
+                                Rollbacks
+                                (At (SlotNo 3))
+                                Nothing
+                        let phase4 =
+                                InFollowing 1 following
+                        -- Follow 2 more blocks
+                        phase5 <-
+                            transact
+                                $ processBlock
+                                    Rollbacks
+                                    maxBound
+                                    (At (SlotNo 4))
+                                    ( SlotNo 4
+                                    , [Insert (mkTestKey "utxo4") (mkTestValue "out4")]
+                                    )
+                                    phase4
+                        phase6 <-
+                            transact
+                                $ processBlock
+                                    Rollbacks
+                                    maxBound
+                                    (At (SlotNo 5))
+                                    ( SlotNo 5
+                                    , [Insert (mkTestKey "utxo5") (mkTestValue "out5")]
+                                    )
+                                    phase5
+                        -- Rollback to slot 4
+                        case phase6 of
+                            InFollowing n f -> do
+                                (result, _) <-
+                                    transact
+                                        $ rollbackTo
+                                            Rollbacks
+                                            f
+                                            n
+                                            (At (SlotNo 4))
+                                case result of
+                                    Store.RollbackSucceeded deleted ->
+                                        deleted `shouldBe` 1
+                                    Store.RollbackImpossible ->
+                                        fail "unexpected RollbackImpossible"
+                            InRestoration _ _ ->
+                                fail "expected Following"
+                    InFollowing _ _ ->
+                        fail "expected Restoration after restore"
