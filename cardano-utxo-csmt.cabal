@@ -105,7 +105,6 @@ library application
   other-modules:    Paths_cardano_utxo_csmt
   exposed-modules:
     Cardano.UTxOCSMT.Application.Run.Application
-    Cardano.UTxOCSMT.Application.Run.Application2
     Cardano.UTxOCSMT.Application.Run.Config
     Cardano.UTxOCSMT.Application.Run.GenesisData
     Cardano.UTxOCSMT.Application.Run.Main
@@ -336,7 +335,6 @@ test-suite unit-tests
   main-is:            main.hs
   other-modules:
     Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
-    Cardano.UTxOCSMT.Application.Database.E2ESpec
     Cardano.UTxOCSMT.Application.Database.RocksDBSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
@@ -420,10 +418,12 @@ test-suite e2e-tests
     , cardano-node-clients:devnet
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
+    , chain-follower
     , contra-tracer
     , directory
     , filepath
     , hspec
+    , lens
     , ouroboros-network-api
     , process
     , rocksdb-haskell-jprupp
