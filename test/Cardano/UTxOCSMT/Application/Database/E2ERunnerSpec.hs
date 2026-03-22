@@ -16,9 +16,6 @@ import CSMT.Hashes
     , isoHash
     , mkHash
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
-    ( ArmageddonParams (..)
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     , Prisms (..)

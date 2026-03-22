@@ -21,9 +21,7 @@ import Cardano.UTxOCSMT.Application.ChainSyncN2C
     ( mkN2CChainSyncApplication
     )
 import Cardano.UTxOCSMT.Application.Database.Backend
-    ( armageddonCleanup
-    , armageddonSetup
-    , processBlock
+    ( processBlock
     , rollbackTo
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
