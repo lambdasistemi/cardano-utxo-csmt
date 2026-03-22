@@ -42,7 +42,6 @@ import ChainFollower.Rollbacks.Store qualified as Store
 import ChainFollower.Runner
     ( Phase (..)
     , processBlock
-    , pruneOldPoints
     , rollbackTo
     )
 import Codec.CBOR.Decoding qualified as CBOR
@@ -55,8 +54,8 @@ import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Short (toShort)
-import Database.KV.Database (mkColumns)
-import Database.KV.RocksDB (mkRocksDBDatabase)
+import Database.KV.Database ()
+import Database.KV.RocksDB ()
 import Database.KV.Transaction qualified as KV
 import Database.RocksDB
     ( BatchOp
@@ -330,6 +329,7 @@ spec = describe "E2E Runner" $ do
                     transact
                         $ processBlock
                             Rollbacks
+                            maxBound
                             (At (SlotNo 1))
                             ( SlotNo 1
                             , [Insert key1 val1, Insert key2 val2]
@@ -342,6 +342,7 @@ spec = describe "E2E Runner" $ do
                     transact
                         $ processBlock
                             Rollbacks
+                            maxBound
                             (At (SlotNo 2))
                             ( SlotNo 2
                             , [Delete key1, Insert key3 val3]
@@ -352,6 +353,7 @@ spec = describe "E2E Runner" $ do
                     transact
                         $ processBlock
                             Rollbacks
+                            maxBound
                             (At (SlotNo 3))
                             (SlotNo 3, [])
                             phase2
@@ -408,12 +410,13 @@ spec = describe "E2E Runner" $ do
 
     it "forward + finality pruning" $ do
         withFreshDB $ \phase transact -> do
-            -- Follow 3 blocks
+            -- Follow 3 blocks with k=1 (keep 2 points)
+            -- Auto-pruning kicks in when count > k+1
             phase1 <-
                 transact
                     $ processBlock
                         Rollbacks
-                        maxBound
+                        1
                         (At (SlotNo 1))
                         (SlotNo 1, [])
                         phase
@@ -421,7 +424,7 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
-                        maxBound
+                        1
                         (At (SlotNo 2))
                         (SlotNo 2, [])
                         phase1
@@ -429,19 +432,11 @@ spec = describe "E2E Runner" $ do
                 transact
                     $ processBlock
                         Rollbacks
-                        maxBound
+                        1
                         (At (SlotNo 3))
                         (SlotNo 3, [])
                         phase2
-            -- Prune below slot 2 (finality)
-            pruned <-
-                transact
-                    $ pruneOldPoints
-                        Rollbacks
-                        (At (SlotNo 2))
-            -- Origin + slot 1 should be pruned
-            pruned `shouldBe` 2
-            -- Only slot 2 and 3 remain
+            -- With k=1, only slot 2 and 3 remain
             history <-
                 transact
                     $ Store.queryHistory Rollbacks
