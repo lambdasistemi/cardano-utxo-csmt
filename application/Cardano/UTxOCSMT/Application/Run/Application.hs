@@ -298,10 +298,24 @@ follower
                                             armageddonParams
                                             securityParam
                                             (InRestoration 0 restoring)
-                        InRestoration _ _ ->
-                            error
-                                "follower: cannot roll back\
-                                \ in restoration mode"
+                        InRestoration _ _ -> do
+                            armageddon
+                                (Tracer $ const $ pure ())
+                                runner
+                                armageddonParams
+                            restoring <-
+                                Backend.startRestoring
+                                    backendInit
+                            pure
+                                $ Reset
+                                $ intersector
+                                    tracer
+                                    trUTxO
+                                    runner
+                                    backendInit
+                                    armageddonParams
+                                    securityParam
+                                    (InRestoration 0 restoring)
                 }
 
 application
