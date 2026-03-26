@@ -45,7 +45,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
-import Control.Monad (forM, forM_)
+import Control.Monad (foldM, forM, forM_)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
@@ -62,7 +62,8 @@ import Database.RocksDB
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import System.IO.Temp (withSystemTempDirectory)
-import Test.Hspec (Spec, describe, it, shouldBe)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
+import Test.QuickCheck (choose, forAll, ioProperty, property)
 
 type instance TipOf SlotNo = SlotNo
 
@@ -759,3 +760,129 @@ spec = describe "E2E Runner" $ do
                                 fail "expected Following"
                     InFollowing _ _ ->
                         fail "expected Restoration after restore"
+
+    describe "Property tests" $ do
+        it "blocks deeper than k are pruned"
+            $ property
+            $ forAll (choose (2, 5 :: Int))
+            $ \k ->
+                forAll (choose (k + 2, 15)) $ \n ->
+                    ioProperty $ withFreshDB $ \phase transact -> do
+                        let slots =
+                                map (SlotNo . fromIntegral) [1 .. n]
+                        _ <-
+                            foldM
+                                ( \p slot ->
+                                    transact
+                                        $ processBlock
+                                            Rollbacks
+                                            (fromIntegral k)
+                                            (At slot)
+                                            (slot, [])
+                                            p
+                                )
+                                phase
+                                slots
+                        history <-
+                            transact
+                                $ Store.queryHistory Rollbacks
+                        length history
+                            `shouldSatisfy` (<= fromIntegral k + 1)
+
+        it "blocks within k are rollbackable"
+            $ property
+            $ forAll (choose (2, 5 :: Int))
+            $ \k ->
+                forAll (choose (k + 1, 15)) $ \n ->
+                    ioProperty $ withFreshDB $ \phase transact -> do
+                        let slots =
+                                map (SlotNo . fromIntegral) [1 .. n]
+                        finalPhase <-
+                            foldM
+                                ( \p slot ->
+                                    transact
+                                        $ processBlock
+                                            Rollbacks
+                                            (fromIntegral k)
+                                            (At slot)
+                                            (slot, [])
+                                            p
+                                )
+                                phase
+                                slots
+                        -- Try rolling back to each of the last k slots
+                        let rollbackTargets =
+                                map (SlotNo . fromIntegral)
+                                    $ take k [n, n - 1 ..]
+                        case finalPhase of
+                            InFollowing count following -> do
+                                forM_ rollbackTargets $ \target -> do
+                                    (result, _) <-
+                                        transact
+                                            $ rollbackTo
+                                                Rollbacks
+                                                following
+                                                count
+                                                (At target)
+                                    case result of
+                                        Store.RollbackSucceeded _ ->
+                                            pure ()
+                                        Store.RollbackImpossible ->
+                                            fail
+                                                $ "expected rollback to "
+                                                    <> show target
+                                                    <> " to succeed"
+                            InRestoration _ _ ->
+                                fail "expected Following"
+
+        it "rollback undoes changes"
+            $ property
+            $ ioProperty
+            $ withFreshDB
+            $ \phase transact -> do
+                let key1 = mkTestKey "prop-undo"
+                    val1 = mkTestValue "val-undo"
+                -- Slot 1: empty block
+                phase1 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 1))
+                            (SlotNo 1, [])
+                            phase
+                -- Slot 2: insert key
+                phase2 <-
+                    transact
+                        $ processBlock
+                            Rollbacks
+                            maxBound
+                            (At (SlotNo 2))
+                            ( SlotNo 2
+                            , [Insert key1 val1]
+                            )
+                            phase1
+                -- Verify key exists before rollback
+                valBefore <-
+                    transact
+                        $ KV.query KVCol key1
+                valBefore `shouldSatisfy` \case
+                    Just _ -> True
+                    Nothing -> False
+                -- Rollback to slot 1 (undoes slot 2 insert)
+                case phase2 of
+                    InFollowing n f -> do
+                        _ <-
+                            transact
+                                $ rollbackTo
+                                    Rollbacks
+                                    f
+                                    n
+                                    (At (SlotNo 1))
+                        -- Key from slot 2 should be gone
+                        valAfter <-
+                            transact
+                                $ KV.query KVCol key1
+                        valAfter `shouldBe` Nothing
+                    InRestoration _ _ ->
+                        fail "expected Following"
