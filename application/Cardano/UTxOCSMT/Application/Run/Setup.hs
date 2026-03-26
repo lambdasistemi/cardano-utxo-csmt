@@ -1,7 +1,6 @@
 module Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
     , setupDB
-    , checkEmptyRollbacks
     )
 where
 
@@ -49,15 +48,12 @@ import Cardano.UTxOCSMT.Ouroboros.Types (Point)
 import Control.Monad (forM_, when)
 import Control.Tracer (Tracer)
 import Data.ByteString.Lazy (LazyByteString)
-import Data.Maybe (isNothing)
 import Data.Tracer.TraceWith
     ( contra
     , trace
     , pattern TraceWith
     )
 import Data.Word (Word64)
-import Database.KV.Cursor (firstEntry)
-import Database.KV.Transaction (iterating)
 import Database.KV.Transaction qualified as L
 import Database.RocksDB (BatchOp, ColumnFamily)
 import Ouroboros.Network.Block qualified as Network
@@ -202,25 +198,3 @@ setupDB
                     , setupNetworkMagic = magic
                     , setupEpochSlots = es
                     }
-
-{- | Check if the rollbacks column family is empty.
-
-Returns 'True' if the database is new (no rollback points stored),
-'False' if it contains existing data.
--}
-checkEmptyRollbacks
-    :: RunTransaction
-        ColumnFamily
-        BatchOp
-        Point
-        hash
-        LazyByteString
-        LazyByteString
-        IO
-    -- ^ Database transaction runner
-    -> IO Bool
-    -- ^ 'True' if database is empty
-checkEmptyRollbacks (RunTransaction runTx) =
-    runTx $ do
-        mfe <- iterating RollbackPoints firstEntry
-        return $ isNothing mfe

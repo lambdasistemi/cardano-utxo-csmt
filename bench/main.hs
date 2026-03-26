@@ -10,7 +10,6 @@ import Bench.CSMT
     , runKVOnlySmallBatchBench
     , runPureSerializationBench
     , runRepeatedTransactionsBench
-    , runStressBench
     )
 import Bench.Deserialization
     ( benchDeserialization
@@ -32,8 +31,6 @@ main = do
         ["--batch-scaling"] -> batchScaling
         ["--repeated-txns"] -> repeatedTxns
         ["--forward-tip"] -> forwardTipStyle
-        ["--stress"] -> stressBench 2000
-        ["--stress", n] -> stressBench (read n)
         _ -> criterionMain
 
 internalOnly :: IO ()
@@ -106,16 +103,6 @@ batchScaling = do
                     ++ " μs/UTxO"
         )
         [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, n]
-
--- | Stress benchmark: full Update state machine, thousands of blocks
-stressBench :: Int -> IO ()
-stressBench nBlocks = do
-    putStrLn "Loading golden UTxOs..."
-    utxos <- loadGoldenUtxos
-    putStrLn $ "Loaded " ++ show (length utxos) ++ " UTxOs"
-    putStrLn ""
-    putStrLn "=== Stress benchmark (full Update state machine) ==="
-    runStressBench nBlocks utxos
 
 criterionMain :: IO ()
 criterionMain =
