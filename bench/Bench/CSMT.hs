@@ -17,7 +17,6 @@ module Bench.CSMT
     , runKVOnlyPrePopulatedBench
     , runRepeatedTransactionsBench
     , runForwardTipStyleBench
-    , runStressBench
     )
 where
 
@@ -43,25 +42,18 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , RunTransaction (..)
     , mkCSMTOps
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( ForwardOps (..)
-    , UpdateTrace
-    )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
-    , Update (..)
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
-    ( createUpdateState
-    , newRunRocksDBTransaction
+    ( newRunRocksDBTransaction
     )
 import Codec.Serialise (deserialise)
 import Control.Lens (Prism', lazy, prism', strict, view)
 import Control.Monad (forM, forM_, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
-import Control.Tracer (Tracer, nullTracer)
-import Data.Bits (shiftR, (.&.))
+import Control.Tracer (nullTracer)
 import Data.ByteString (StrictByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Lazy (ByteString)
@@ -548,118 +540,6 @@ benchArmageddonParams =
         { noHash = mkHash ""
         , armageddonBatchSize = 1000
         }
-
-{- | Stress benchmark: feeds thousands of synthetic blocks through
-the full Update state machine (same pipeline as production), without
-network. Measures per-block and per-UTxO timing to reproduce the
-production slowdown.
--}
-runStressBench
-    :: Int
-    -- ^ Number of blocks to simulate
-    -> [(ByteString, ByteString)]
-    -- ^ Golden UTxOs (used as template for each block)
-    -> IO ()
-runStressBench nBlocks utxos =
-    withSystemTempDirectory "csmt-stress" $ \tmpDir ->
-        withDBCF
-            tmpDir
-            rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
-            $ \db -> do
-                let csmtOps = kvOnlyCSMTOps (view strict)
-                    benchOps =
-                        ForwardOps
-                            { doQueryTip = False
-                            , doCsmt = True
-                            , doRollback = False
-                            }
-                runner <- newRunRocksDBTransaction db benchPrisms
-                (update0, _cps) <-
-                    createUpdateState
-                        (nullTracer :: Tracer IO (UpdateTrace () Hash))
-                        benchOps
-                        csmtOps
-                        (const $ mkHash "")
-                        (\_ _ -> pure ())
-                        benchArmageddonParams
-                        runner
-                        maxBound
-                        (\_ -> pure ())
-                let nOps = length utxos
-                    -- Generate fixed-size 34-byte keys (like real UTxO refs:
-                    -- 32-byte tx hash + 2-byte index). We encode block+index
-                    -- into 34 zero-padded bytes so DB key size matches production.
-                    mkKey :: Int -> Int -> ByteString
-                    mkKey blk idx =
-                        let w32 n =
-                                B.pack
-                                    [ fromIntegral ((n `shiftR` 24) .&. 0xFF)
-                                    , fromIntegral ((n `shiftR` 16) .&. 0xFF)
-                                    , fromIntegral ((n `shiftR` 8) .&. 0xFF)
-                                    , fromIntegral (n .&. 0xFF)
-                                    ]
-                        in  LBS.fromStrict
-                                $ w32 blk
-                                    <> w32 idx
-                                    <> B.replicate 26 0
-                    -- Each block inserts nOps new keys and deletes nOps/2
-                    -- keys from block (blk - 3). Since block (blk - 3)
-                    -- inserted nOps keys and we only delete half, the
-                    -- other half remains — so the DB grows by nOps/2 per
-                    -- block. All deletes hit keys that exist in the DB.
-                    mkBlockOps :: Int -> [Operation ByteString ByteString]
-                    mkBlockOps blk =
-                        let inserts =
-                                [ Insert (mkKey blk idx) v
-                                | (idx, (_k, v)) <- zip [0 ..] utxos
-                                ]
-                            deletes
-                                | blk > 3 =
-                                    [ Delete (mkKey (blk - 3) idx)
-                                    | idx <- [0 .. nOps `div` 2 - 1]
-                                    ]
-                                | otherwise = []
-                        in  deletes ++ inserts
-                putStrLn
-                    $ "Stress: "
-                        ++ show nBlocks
-                        ++ " blocks × ~"
-                        ++ show nOps
-                        ++ " ins + "
-                        ++ show (nOps `div` 2)
-                        ++ " del/block (unique keys)"
-                -- Feed blocks through the Update state machine
-                let go !i !update
-                        | i > nBlocks = pure ()
-                        | otherwise = do
-                            let !blockOps = mkBlockOps i
-                                !nBlockOps = length blockOps
-                            t0 <- getMonotonicTimeNSec
-                            update' <-
-                                forwardTipApply update () () blockOps
-                            t1 <- getMonotonicTimeNSec
-                            let totalUs =
-                                    fromIntegral (t1 - t0)
-                                        / 1000
-                                        :: Double
-                                usPerOp = totalUs / fromIntegral nBlockOps
-                            when (i <= 10 || i `mod` 100 == 0)
-                                $ putStrLn
-                                $ "  block "
-                                    ++ show i
-                                    ++ ": "
-                                    ++ show (round totalUs :: Int)
-                                    ++ " μs total, "
-                                    ++ show (round usPerOp :: Int)
-                                    ++ " μs/UTxO"
-                            go (i + 1) update'
-                go (1 :: Int) update0
 
 {- | Construct KVOnly 'CSMTOps' for benchmarking.
 Writes to KV + journal but does not update the CSMT tree.

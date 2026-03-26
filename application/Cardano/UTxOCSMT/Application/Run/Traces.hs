@@ -18,19 +18,10 @@ where
 -- application lifecycle, including startup, database operations, and HTTP
 -- services.
 
-import CSMT.Hashes (Hash)
 import CSMT.MTS (ReplayEvent (..))
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     ( ArmageddonTrace
     , renderArmageddonTrace
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( UpdateTrace
-        ( UpdateCSMTMeasured
-        , UpdateRollbackMeasured
-        , UpdateTransactMeasured
-        )
-    , renderUpdateTrace
     )
 import Cardano.UTxOCSMT.Application.Metrics
     ( Metrics (..)
@@ -72,8 +63,6 @@ data MainTraces
       NotEmpty Point
     | -- | New database setup event (armageddon initialization)
       New ArmageddonTrace
-    | -- | Database update event (block processing)
-      Update (UpdateTrace Point Hash)
     | -- | Chain sync application event
       Application ApplicationTrace
     | -- | API server is starting
@@ -112,8 +101,6 @@ renderMainTraces (NotEmpty point) =
 renderMainTraces (New a) =
     "Database is empty, performing initial setup."
         ++ renderArmageddonTrace a
-renderMainTraces (Update ut) =
-    "Database update: " ++ renderUpdateTrace ut
 renderMainTraces (Application at) =
     "Application event: " ++ renderApplicationTrace at
 renderMainTraces ServeApi =
@@ -196,12 +183,6 @@ stealMetricsEvent
     -- ^ The trace to inspect
     -> Maybe MetricsEvent
     -- ^ Corresponding metrics event
-stealMetricsEvent (Update (UpdateCSMTMeasured _ _ _ ns)) =
-    Just $ CSMTDurationEvent ns
-stealMetricsEvent (Update (UpdateRollbackMeasured _ _ _ _ ns)) =
-    Just $ RollbackDurationEvent ns
-stealMetricsEvent (Update (UpdateTransactMeasured _ secs)) =
-    Just $ TransactionDurationEvent secs
 stealMetricsEvent (NotEmpty point) =
     Just $ BaseCheckpointEvent point
 stealMetricsEvent (Application (ApplicationRollingBack _)) =
@@ -216,9 +197,6 @@ are throttled to 1 Hz to avoid flooding logs during sync.
 -}
 matchHighFrequencyEvents :: MainTraces -> Maybe Double
 matchHighFrequencyEvents = \case
-    Update (UpdateCSMTMeasured{}) -> Just 1.0
-    Update (UpdateRollbackMeasured{}) -> Just 1.0
-    Update (UpdateTransactMeasured{}) -> Just 1.0
     MetricsReport{} -> Just 1.0
     JournalReplay{} -> Just 1.0
     _ -> Nothing

@@ -7,55 +7,30 @@ It handles:
 
 * Transaction management with atomic batch operations
 * Column family setup for different data types (UTxOs, CSMT, rollback points)
-* Integration with the abstract 'Update' and 'Query' interfaces
 -}
 module Cardano.UTxOCSMT.Application.Database.RocksDB
     ( RocksDBTransaction
     , RocksDBQuery
     , newRunRocksDBTransaction
     , newRunRocksDBTransactionUnguarded
-    , newRocksDBState
-    , createUpdateState
-    , createSplitUpdateState
     )
 where
 
-import CSMT.MTS (Ops)
-import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
-    ( ArmageddonParams
-    , setup
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
-    ( Columns (..)
+    ( Columns
     , Prisms
     , codecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
-    ( CSMTOps
-    , RunTransaction (..)
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( ForwardOps
-    , UpdateTrace
-    , newSplitState
-    , newState
+    ( RunTransaction (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Query
-    , TipOf
-    , Update
     )
-import Control.Monad (when)
 import Control.Monad.Catch (MonadMask)
 import Control.Monad.IO.Class (MonadIO)
-import MTS.Interface (Mode (..))
-
-import Control.Tracer (Tracer, nullTracer)
-import Data.Maybe (isNothing)
-import Database.KV.Cursor (firstEntry)
 import Database.KV.Database (mkColumns)
 import Database.KV.RocksDB (mkRocksDBDatabase)
-import Database.KV.Transaction (iterating)
 import Database.KV.Transaction qualified as L
 import Database.RocksDB (BatchOp, ColumnFamily, DB (..))
 import UnliftIO (MonadUnliftIO)
@@ -106,205 +81,3 @@ newRunRocksDBTransactionUnguarded db prisms =
         $ mkRocksDBDatabase db
         $ mkColumns (columnFamilies db)
         $ codecs prisms
-
-newRocksDBState
-    :: ( MonadUnliftIO m
-       , MonadFail m
-       , Ord key
-       , Ord slot
-       , Show slot
-       , MonadMask m
-       )
-    => Tracer m (UpdateTrace slot hash)
-    -> ForwardOps
-    -> DB
-    -> Prisms slot hash key value
-    -> CSMTOps
-        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
-        key
-        value
-        hash
-    -- ^ CSMT operations (insert, delete, root hash)
-    -> (slot -> hash)
-    -> (slot -> TipOf slot -> m ())
-    -- ^ Called after each forward; use to check if at tip and emit Synced
-    -> ArmageddonParams hash
-    -> Int
-    -- ^ Security parameter k (max rollback depth)
-    -> ( slot
-         -> L.Transaction
-                m
-                ColumnFamily
-                (Columns slot hash key value)
-                BatchOp
-                ()
-       )
-    -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> m
-        ( (Update m slot key value, [slot])
-        , RunTransaction ColumnFamily BatchOp slot hash key value m
-        )
-newRocksDBState
-    tracer
-    forwardOps
-    db
-    prisms
-    ops
-    slotHash
-    onForward
-    armageddonParams
-    securityParam
-    saveCheckpoint = do
-        runner <- newRunRocksDBTransaction db prisms
-        _ <- ensureInitialized runner armageddonParams
-        (,runner)
-            <$> newState
-                tracer
-                forwardOps
-                ops
-                slotHash
-                onForward
-                armageddonParams
-                runner
-                securityParam
-                saveCheckpoint
-
--- | Create Update state from an existing runner
-createUpdateState
-    :: ( MonadFail m
-       , Ord key
-       , Ord slot
-       , Show slot
-       )
-    => Tracer m (UpdateTrace slot hash)
-    -> ForwardOps
-    -> CSMTOps
-        (L.Transaction m ColumnFamily (Columns slot hash key value) BatchOp)
-        key
-        value
-        hash
-    -- ^ CSMT operations (insert, delete, root hash)
-    -> (slot -> hash)
-    -> (slot -> TipOf slot -> m ())
-    -- ^ Called after each forward; use to check if at tip and emit Synced
-    -> ArmageddonParams hash
-    -> RunTransaction ColumnFamily BatchOp slot hash key value m
-    -> Int
-    -- ^ Security parameter k (max rollback depth)
-    -> ( slot
-         -> L.Transaction
-                m
-                ColumnFamily
-                (Columns slot hash key value)
-                BatchOp
-                ()
-       )
-    -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> m (Update m slot key value, [slot])
-createUpdateState
-    tracer
-    forwardOps
-    ops
-    slotHash
-    onForward
-    armageddonParams
-    runner
-    securityParam
-    saveCheckpoint = do
-        _ <- ensureInitialized runner armageddonParams
-        newState
-            tracer
-            forwardOps
-            ops
-            slotHash
-            onForward
-            armageddonParams
-            runner
-            securityParam
-            saveCheckpoint
-
-{- | Create split-mode Update state from an existing runner.
-
-Starts in KVOnly mode if journal is non-empty, otherwise Full.
-Uses the 'Ops' GADT for automatic journal replay and transitions.
--}
-createSplitUpdateState
-    :: ( MonadFail m
-       , MonadIO m
-       , Ord key
-       , Ord slot
-       , Show slot
-       )
-    => Tracer m (UpdateTrace slot hash)
-    -> ForwardOps
-    -> Bool
-    -- ^ Whether the DB was freshly initialized (genesis)
-    -> Ops
-        'KVOnly
-        m
-        ColumnFamily
-        (Columns slot hash key value)
-        BatchOp
-        key
-        value
-        hash
-    -- ^ KVOnly ops with built-in replay and transition
-    -> (slot -> TipOf slot -> Bool)
-    -- ^ Tip detection predicate
-    -> (slot -> hash)
-    -> (slot -> TipOf slot -> m ())
-    -> ArmageddonParams hash
-    -> RunTransaction ColumnFamily BatchOp slot hash key value m
-    -> Int
-    -- ^ Security parameter k (max rollback depth)
-    -> ( slot
-         -> L.Transaction
-                m
-                ColumnFamily
-                (Columns slot hash key value)
-                BatchOp
-                ()
-       )
-    -- ^ Save checkpoint (runs inside forwardTip transaction)
-    -> m (Update m slot key value, [slot])
-createSplitUpdateState
-    tracer
-    forwardOps
-    isGenesis
-    ops
-    isAtTip
-    slotHash
-    onForward
-    armageddonParams
-    runner
-    securityParam
-    saveCheckpoint = do
-        _ <- ensureInitialized runner armageddonParams
-        newSplitState
-            tracer
-            forwardOps
-            isGenesis
-            ops
-            isAtTip
-            slotHash
-            onForward
-            armageddonParams
-            runner
-            securityParam
-            saveCheckpoint
-
-{- | Ensure the database has been initialized with an Origin rollback point.
-This makes the public API self-initializing so callers can't forget to
-call 'setup' before creating state.
-Returns 'True' if the DB was freshly initialized (genesis).
--}
-ensureInitialized
-    :: (Ord slot, Monad m)
-    => RunTransaction cf op slot hash key value m
-    -> ArmageddonParams hash
-    -> m Bool
-ensureInitialized runner@RunTransaction{transact} armageddonParams = do
-    empty <-
-        transact $ iterating RollbackPoints $ isNothing <$> firstEntry
-    when empty $ setup nullTracer runner armageddonParams
-    pure empty
