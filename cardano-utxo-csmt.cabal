@@ -335,6 +335,7 @@ test-suite unit-tests
   other-modules:
     Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
+    Cardano.UTxOCSMT.HTTP.ServerSpec
     Control.Foldl.ExtraSpec
     Data.List.SampleFibonacciSpec
     Data.Tracer.ThrottleSpec
