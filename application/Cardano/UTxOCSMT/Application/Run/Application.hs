@@ -280,42 +280,40 @@ follower
                                         $ Progress
                                         $ go
                                             (InFollowing n' f)
-                                Store.RollbackImpossible -> do
-                                    armageddon
-                                        (Tracer $ const $ pure ())
-                                        runner
-                                        armageddonParams
-                                    restoring <-
-                                        Backend.startRestoring
-                                            backendInit
-                                    pure
-                                        $ Reset
-                                        $ intersector
-                                            tracer
-                                            trUTxO
+                                Store.RollbackImpossible
+                                    | n' == 0 ->
+                                        pure
+                                            $ Progress
+                                            $ go
+                                                (InFollowing 0 f)
+                                    | otherwise -> do
+                                        armageddon
+                                            ( Tracer
+                                                $ const
+                                                $ pure ()
+                                            )
                                             runner
-                                            backendInit
                                             armageddonParams
-                                            securityParam
-                                            (InRestoration 0 restoring)
-                        InRestoration _ _ -> do
-                            armageddon
-                                (Tracer $ const $ pure ())
-                                runner
-                                armageddonParams
-                            restoring <-
-                                Backend.startRestoring
-                                    backendInit
+                                        restoring <-
+                                            Backend.startRestoring
+                                                backendInit
+                                        pure
+                                            $ Reset
+                                            $ intersector
+                                                tracer
+                                                trUTxO
+                                                runner
+                                                backendInit
+                                                armageddonParams
+                                                securityParam
+                                                ( InRestoration
+                                                    0
+                                                    restoring
+                                                )
+                        InRestoration _ _ ->
                             pure
-                                $ Reset
-                                $ intersector
-                                    tracer
-                                    trUTxO
-                                    runner
-                                    backendInit
-                                    armageddonParams
-                                    securityParam
-                                    (InRestoration 0 restoring)
+                                $ Progress
+                                $ go phase
                 }
 
 application
