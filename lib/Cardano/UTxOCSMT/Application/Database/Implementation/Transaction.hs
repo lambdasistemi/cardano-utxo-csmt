@@ -3,6 +3,8 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , CSMTContext (..)
     , CSMTOps (..)
     , mkCSMTOps
+    , kvCommonToCSMTOps
+    , fullOpsToCSMTOps
     , openCSMTOps
     , DbState (..)
     , ReadyState (..)
@@ -20,7 +22,9 @@ import CSMT
 import CSMT.Deletion (deleting)
 import CSMT.Interface (Indirect (..), Key, root)
 import CSMT.MTS
-    ( DbState (..)
+    ( CommonOps (..)
+    , DbState (..)
+    , Ops (..)
     , ReadyState (..)
     , ReplayEvent (..)
     , openOps
@@ -36,6 +40,7 @@ import Database.KV.Transaction
     ( Transaction
     , query
     )
+import MTS.Interface qualified as MTS (Mode (..))
 
 newtype RunTransaction cf op slot hash key value m = RunTransaction
     { transact
@@ -76,6 +81,37 @@ mkCSMTOps fkv h =
         , csmtDelete = deleting [] fkv h KVCol CSMTCol
         , csmtRootHash = root h CSMTCol []
         }
+
+{- | Convert KVOnly 'CommonOps' to 'CSMTOps'.
+Root hash is always 'Nothing' (KVOnly mode
+does not maintain the CSMT tree).
+-}
+kvCommonToCSMTOps
+    :: (Monad m)
+    => CommonOps m cf d ops k v
+    -> CSMTOps (Transaction m cf d ops) k v a
+kvCommonToCSMTOps CommonOps{opsInsert, opsDelete} =
+    CSMTOps
+        { csmtInsert = opsInsert
+        , csmtDelete = opsDelete
+        , csmtRootHash = pure Nothing
+        }
+
+-- | Convert Full 'Ops' to 'CSMTOps'.
+fullOpsToCSMTOps
+    :: Ops 'MTS.Full m cf d ops k v a
+    -> CSMTOps (Transaction m cf d ops) k v a
+fullOpsToCSMTOps
+    OpsFull
+        { fullCommon =
+            CommonOps{opsInsert, opsDelete}
+        , opsRootHash
+        } =
+        CSMTOps
+            { csmtInsert = opsInsert
+            , csmtDelete = opsDelete
+            , csmtRootHash = opsRootHash
+            }
 
 {- | Open CSMT ops with crash recovery, wiring 'KVCol',
 'CSMTCol', and 'JournalCol' into the column-parametric

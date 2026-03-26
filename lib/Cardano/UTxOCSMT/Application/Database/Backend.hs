@@ -34,12 +34,14 @@ module Cardano.UTxOCSMT.Application.Database.Backend
 -- The Runner handles all rollback infrastructure:
 -- storing rollback points, rollbackTo, pruning.
 
-import CSMT.MTS (CommonOps (..), Ops (..), toFull)
+import CSMT.MTS (Ops, kvCommon, toFull)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTOps (..)
+    , fullOpsToCSMTOps
+    , kvCommonToCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -165,31 +167,4 @@ createBackend ops slotHash =
                             csmtInsert csmtOps k v
                         Delete k ->
                             csmtDelete csmtOps k
-            }
-
--- | Convert KVOnly 'CommonOps' to 'CSMTOps' (root hash always 'Nothing').
-kvCommonToCSMTOps
-    :: (Monad m)
-    => CommonOps m cf d ops k v
-    -> CSMTOps (Transaction m cf d ops) k v a
-kvCommonToCSMTOps CommonOps{opsInsert, opsDelete} =
-    CSMTOps
-        { csmtInsert = opsInsert
-        , csmtDelete = opsDelete
-        , csmtRootHash = pure Nothing
-        }
-
--- | Convert 'Full' 'Ops' to 'CSMTOps'.
-fullOpsToCSMTOps
-    :: Ops 'MTS.Full m cf d ops k v a
-    -> CSMTOps (Transaction m cf d ops) k v a
-fullOpsToCSMTOps
-    OpsFull
-        { fullCommon = CommonOps{opsInsert, opsDelete}
-        , opsRootHash
-        } =
-        CSMTOps
-            { csmtInsert = opsInsert
-            , csmtDelete = opsDelete
-            , csmtRootHash = opsRootHash
             }
