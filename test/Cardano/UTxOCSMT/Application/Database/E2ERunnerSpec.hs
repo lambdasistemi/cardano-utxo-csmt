@@ -45,7 +45,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
-import Control.Monad (foldM, forM, forM_)
+import Control.Monad (foldM, foldM_, forM, forM_)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
@@ -770,19 +770,18 @@ spec = describe "E2E Runner" $ do
                     ioProperty $ withFreshDB $ \phase transact -> do
                         let slots =
                                 map (SlotNo . fromIntegral) [1 .. n]
-                        _ <-
-                            foldM
-                                ( \p slot ->
-                                    transact
-                                        $ processBlock
-                                            Rollbacks
-                                            (fromIntegral k)
-                                            (At slot)
-                                            (slot, [])
-                                            p
-                                )
-                                phase
-                                slots
+                        foldM_
+                            ( \p slot ->
+                                transact
+                                    $ processBlock
+                                        Rollbacks
+                                        (fromIntegral k)
+                                        (At slot)
+                                        (slot, [])
+                                        p
+                            )
+                            phase
+                            slots
                         history <-
                             transact
                                 $ Store.queryHistory Rollbacks
