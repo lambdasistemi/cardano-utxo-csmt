@@ -146,14 +146,12 @@ setupDB
                         , setupNetworkMagic = magic
                         , setupEpochSlots = es
                         }
-            Nothing -> do
-                new <- checkEmptyRollbacks runner
-                if new
-                    then regularSetup
-                    else
-                        error
-                            "setupDB: Database has rollback \
-                            \points but no checkpoint"
+            -- No legacy checkpoint: either fresh DB
+            -- or Runner-based follower (stores rollback
+            -- points but not legacy checkpoints).
+            -- In both cases, regularSetup seeds genesis
+            -- only if the CSMT is empty.
+            Nothing -> regularSetup
       where
         -- \| Load genesis and extract parameters + UTxO pairs
         loadGenesis
