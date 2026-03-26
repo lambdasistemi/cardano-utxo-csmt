@@ -125,6 +125,7 @@ library application
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
     , cborg
+    , chain-follower
     , containers
     , contra-tracer
     , contra-tracer-contrib
@@ -156,6 +157,7 @@ library library
     Cardano.UTxOCSMT.Application.BlockFetch
     Cardano.UTxOCSMT.Application.ChainSync
     Cardano.UTxOCSMT.Application.ChainSyncN2C
+    Cardano.UTxOCSMT.Application.Database.Backend
     Cardano.UTxOCSMT.Application.Database.Implementation.AppConfig
     Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
     Cardano.UTxOCSMT.Application.Database.Implementation.Columns
@@ -213,7 +215,6 @@ library library
     , mtl
     , mts
     , mts:csmt
-    , mts:rollbacks
     , network
     , network-mux
     , opt-env-conf
@@ -297,6 +298,7 @@ test-suite unit-tests
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
     , cborg
+    , chain-follower
     , containers
     , contra-tracer
     , contra-tracer-contrib
@@ -311,12 +313,12 @@ test-suite unit-tests
     , mempack
     , mts
     , mts:csmt
-    , mts:rollbacks
     , opt-env-conf
     , ouroboros-network-api
     , path
     , QuickCheck
     , rocksdb-haskell-jprupp
+    , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
     , serialise
     , streaming
@@ -332,7 +334,7 @@ test-suite unit-tests
   type:               exitcode-stdio-1.0
   main-is:            main.hs
   other-modules:
-    Cardano.UTxOCSMT.Application.Database.E2ESpec
+    Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
     Cardano.UTxOCSMT.Application.Database.RocksDBSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
@@ -416,10 +418,12 @@ test-suite e2e-tests
     , cardano-node-clients:devnet
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
+    , chain-follower
     , contra-tracer
     , directory
     , filepath
     , hspec
+    , lens
     , ouroboros-network-api
     , process
     , rocksdb-haskell-jprupp

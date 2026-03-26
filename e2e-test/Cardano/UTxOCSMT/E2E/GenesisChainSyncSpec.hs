@@ -13,16 +13,23 @@ import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Node.Client.E2E.Devnet
     ( withCardanoNode
     )
+import Cardano.UTxOCSMT.Application.Database.Backend
+    ( createBackend
+    )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
+    ( Columns (..)
+    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
+    , DbState (..)
+    , ReadyState (..)
+    , RunTransaction (..)
     , mkCSMTOps
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( fullForwardOps
+    , openCSMTOps
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
-    ( createUpdateState
-    , newRunRocksDBTransaction
+    ( newRunRocksDBTransaction
+    , newRunRocksDBTransactionUnguarded
     )
 import Cardano.UTxOCSMT.Application.Run.Application
     ( applicationN2C
@@ -38,7 +45,12 @@ import Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
     , setupDB
     )
+import ChainFollower.Backend qualified as Backend
+import ChainFollower.Rollbacks.Store qualified as CFStore
+import ChainFollower.Runner (Phase (..))
+import Control.Lens (iso)
 import Control.Tracer (nullTracer)
+import Data.ByteString.Lazy qualified as BL
 import System.FilePath ((</>))
 import System.IO.Temp
     ( withSystemTempDirectory
@@ -62,8 +74,10 @@ spec :: Spec
 spec = describe "Genesis chain sync" $ do
     it "processes blocks from genesis without crashing"
         $ do
-            let CSMTContext{fromKV = fkv, hashing = h} =
-                    context
+            let CSMTContext
+                    { fromKV = fkv
+                    , hashing = h
+                    } = context
                 ops = mkCSMTOps fkv h
             withCardanoNode genesisDir
                 $ \socketPath _startMs -> do
@@ -76,6 +90,10 @@ spec = describe "Genesis chain sync" $ do
                                         newRunRocksDBTransaction
                                             db
                                             prisms
+                                    let unguardedRunner =
+                                            newRunRocksDBTransactionUnguarded
+                                                db
+                                                prisms
                                     SetupResult
                                         { setupStartingPoint
                                         , setupNetworkMagic
@@ -88,29 +106,72 @@ spec = describe "Genesis chain sync" $ do
                                             armageddonParams
                                             ops
                                             runner
-                                    (state, slots) <-
-                                        createUpdateState
-                                            nullTracer
-                                            fullForwardOps
-                                            ops
-                                            slotHash
-                                            (\_ _ -> pure ())
-                                            armageddonParams
-                                            runner
-                                            maxBound
-                                            (\_ -> pure ())
+                                    -- Open ops with crash recovery
+                                    dbState <-
+                                        openCSMTOps
+                                            4
+                                            1000
+                                            ( iso
+                                                BL.toStrict
+                                                BL.fromStrict
+                                            )
+                                            fkv
+                                            h
+                                            (transact runner)
+                                            ( transact
+                                                unguardedRunner
+                                            )
+                                            (const $ pure ())
+                                    let resolve
+                                            (NeedsRecovery r) =
+                                                r >>= resolve
+                                        resolve
+                                            ( Ready
+                                                    ( ChooseKVOnly
+                                                            kvOps
+                                                        )
+                                                ) =
+                                                pure kvOps
+                                        resolve
+                                            (Ready (ChooseFull _)) =
+                                                fail
+                                                    "unexpected\
+                                                    \ ChooseFull"
+                                    kvOnlyOps <-
+                                        resolve dbState
+                                    let backendInit =
+                                            createBackend
+                                                kvOnlyOps
+                                                slotHash
+                                    initialCount <-
+                                        transact runner
+                                            $ CFStore.countPoints
+                                                Rollbacks
+                                    following <-
+                                        Backend.resumeFollowing
+                                            backendInit
+                                    let initialPhase =
+                                            InFollowing
+                                                initialCount
+                                                following
                                     result <-
                                         timeout
                                             15_000_000
                                             $ applicationN2C
-                                                (EpochSlots setupEpochSlots)
+                                                ( EpochSlots
+                                                    setupEpochSlots
+                                                )
                                                 setupNetworkMagic
                                                 socketPath
                                                 setupStartingPoint
                                                 (\_ -> pure ())
                                                 nullTracer
                                                 nullTracer
-                                                state
-                                                slots
+                                                runner
+                                                backendInit
+                                                armageddonParams
+                                                maxBound
+                                                initialPhase
+                                                [setupStartingPoint]
                                     result
                                         `shouldBe` Nothing

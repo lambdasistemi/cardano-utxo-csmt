@@ -3,7 +3,6 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     , Prisms (..)
     , codecs
     , ConfigKey (..)
-    , rollbackCounter
     )
 where
 
@@ -13,14 +12,16 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( RollbackPointKV
+    , rollbackListPrism
     , rollbackPointPrism
     , withOriginPrism
     )
+import Cardano.UTxOCSMT.Application.Database.Interface
+    ( Operation
+    )
+import ChainFollower.Rollbacks.Column (RollbackKV)
 import Control.Lens (Prism', prism', type (:~:) (Refl))
-import Data.Bits (shiftL, shiftR, (.|.))
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
-import Data.Word (Word64)
 import Database.KV.Transaction
     ( Codecs (..)
     , DMap
@@ -31,7 +32,7 @@ import Database.KV.Transaction
     , KV
     , fromList
     )
-import MTS.Rollbacks.Store (RollbackCounter (..))
+import Ouroboros.Network.Point (WithOrigin)
 
 -- | Single key for application configuration
 data ConfigKey = AppConfigKey
@@ -63,9 +64,18 @@ data Columns slot hash key value x where
     JournalCol
         :: Columns slot hash key value (KV key ByteString)
         -- ^ Journal column for KVOnly mode replay
-    MetricsCol
-        :: Columns slot hash key value (KV ByteString Int)
-        -- ^ Metrics column for persistent counters
+    Rollbacks
+        :: Columns
+            slot
+            hash
+            key
+            value
+            ( RollbackKV
+                (WithOrigin slot)
+                [Operation key value]
+                (hash, Maybe hash)
+            )
+        -- ^ New rollback column for Runner API
 
 instance GEq (Columns slot hash key value) where
     geq KVCol KVCol = Just Refl
@@ -73,7 +83,7 @@ instance GEq (Columns slot hash key value) where
     geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
     geq JournalCol JournalCol = Just Refl
-    geq MetricsCol MetricsCol = Just Refl
+    geq Rollbacks Rollbacks = Just Refl
     geq _ _ = Nothing
 
 instance GCompare (Columns slot hash key value) where
@@ -90,10 +100,10 @@ instance GCompare (Columns slot hash key value) where
     gcompare ConfigCol ConfigCol = GEQ
     gcompare ConfigCol _ = GLT
     gcompare JournalCol JournalCol = GEQ
-    gcompare JournalCol MetricsCol = GLT
+    gcompare JournalCol Rollbacks = GLT
     gcompare JournalCol _ = GGT
-    gcompare MetricsCol MetricsCol = GEQ
-    gcompare MetricsCol _ = GGT
+    gcompare Rollbacks Rollbacks = GEQ
+    gcompare Rollbacks _ = GGT
 
 -- | Prisms for serializing/deserializing keys and values
 data Prisms slot hash key value = Prisms
@@ -126,50 +136,10 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
                 { keyCodec = keyP
                 , valueCodec = prism' id Just
                 }
-        , MetricsCol
+        , Rollbacks
             :=> Codecs
-                { keyCodec = prism' id Just
-                , valueCodec = intPrism
+                { keyCodec = withOriginPrism slotP
+                , valueCodec =
+                    rollbackListPrism hashP keyP valueP
                 }
         ]
-
--- | Serialize Int as 8-byte big-endian.
-intPrism :: Prism' ByteString Int
-intPrism = prism' encode decode
-  where
-    encode n =
-        let w = fromIntegral n :: Word64
-        in  BS.pack
-                [ fromIntegral (w `shiftR` 56)
-                , fromIntegral (w `shiftR` 48)
-                , fromIntegral (w `shiftR` 40)
-                , fromIntegral (w `shiftR` 32)
-                , fromIntegral (w `shiftR` 24)
-                , fromIntegral (w `shiftR` 16)
-                , fromIntegral (w `shiftR` 8)
-                , fromIntegral w
-                ]
-    decode bs
-        | BS.length bs == 8 =
-            case map fromIntegral $ BS.unpack bs of
-                [a, b, c, d, e, f, g, h] ->
-                    Just
-                        $ fromIntegral @Word64
-                        $ (a `shiftL` 56)
-                            .|. (b `shiftL` 48)
-                            .|. (c `shiftL` 40)
-                            .|. (d `shiftL` 32)
-                            .|. (e `shiftL` 24)
-                            .|. (f `shiftL` 16)
-                            .|. (g `shiftL` 8)
-                            .|. h
-                _ -> Nothing
-        | otherwise = Nothing
-
--- | Persistent rollback point counter.
-rollbackCounter :: RollbackCounter (Columns slot hash key value)
-rollbackCounter =
-    RollbackCounter
-        { rcSelector = MetricsCol
-        , rcKey = "rollback_count"
-        }

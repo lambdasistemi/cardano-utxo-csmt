@@ -43,6 +43,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     ( Query (..)
     , hoistQuery
     )
+import ChainFollower.Rollbacks.Store qualified as Store
 import Control.Lens (Iso', review)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
@@ -61,7 +62,6 @@ import Database.KV.Transaction
     , iterating
     , query
     )
-import MTS.Rollbacks.Store qualified as Store
 import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Create a query interface

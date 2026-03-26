@@ -4,6 +4,12 @@ module Cardano.UTxOCSMT.Application.Run.Main
 where
 
 import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.UTxOCSMT.Application.Database.Backend
+    ( createBackend
+    )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
+    ( Columns (..)
+    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Query
     ( putBaseCheckpoint
     )
@@ -15,13 +21,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     , openCSMTOps
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Update
-    ( fullForwardOps
-    , measureUpdateDurations
-    )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
-    ( createSplitUpdateState
-    , newRunRocksDBTransaction
+    ( newRunRocksDBTransaction
     , newRunRocksDBTransactionUnguarded
     )
 import Cardano.UTxOCSMT.Application.Metrics
@@ -64,6 +65,9 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     , stealMetricsEvent
     )
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
+import ChainFollower.Backend qualified as Backend
+import ChainFollower.Rollbacks.Store qualified as CFStore
+import ChainFollower.Runner (Phase (..))
 import Control.Concurrent.Async (async, link)
 import Control.Exception (SomeException, catch, displayException)
 import Control.Lens (iso)
@@ -87,8 +91,6 @@ import Data.Tracer.TraceWith
 import Main.Utf8 (withUtf8)
 import OptEnvConf (runParser)
 import Ouroboros.Consensus.Ledger.SupportsPeerSelection (PortNumber)
-import Ouroboros.Network.Block (SlotNo (..), pointSlot)
-import Ouroboros.Network.Point (WithOrigin (..))
 import Paths_cardano_utxo_csmt (version)
 import System.IO (BufferMode (..), hSetBuffering, stdout)
 
@@ -225,9 +227,7 @@ main = withUtf8 $ do
 
             SetupResult
                 { setupStartingPoint
-                , setupIsGenesis
                 , setupSecurityParam
-                , setupStabilityWindow
                 , setupNetworkMagic
                 , setupEpochSlots
                 } <-
@@ -239,39 +239,31 @@ main = withUtf8 $ do
                     ops
                     runner
 
-            -- Now create the Update state (logs "New update state")
-            let stabilityWindow =
-                    SlotNo setupStabilityWindow
-                onForward blockPoint chainTipSlot =
-                    case pointSlot blockPoint of
-                        At blockSlot
-                            | blockSlot >= chainTipSlot ->
-                                traceWith metricsEvent $ SyncPhaseEvent Synced
-                        _ -> pure ()
-                isAtTip blockPoint chainTipSlot =
-                    case pointSlot blockPoint of
-                        At blockSlot ->
-                            blockSlot + stabilityWindow
-                                >= chainTipSlot
-                        _ -> False
-            updateTracer <-
-                measureUpdateDurations (contra Update)
-            (state, slots) <-
-                createSplitUpdateState
-                    updateTracer
-                    fullForwardOps
-                    setupIsGenesis
-                    kvOnlyOps
-                    isAtTip
-                    slotHash
-                    onForward
-                    armageddonParams
-                    runner
-                    (fromIntegral setupSecurityParam)
-                    ( putBaseCheckpoint
-                        decodePoint
-                        encodePoint
-                    )
+            -- Create Backend.Init
+            let backendInit =
+                    createBackend kvOnlyOps slotHash
+
+            -- Count rollback points and build
+            -- initial phase
+            initialCount <-
+                transact runner
+                    $ CFStore.countPoints Rollbacks
+            following <-
+                Backend.resumeFollowing backendInit
+            let initialPhase =
+                    InFollowing
+                        initialCount
+                        following
+
+            -- Build available points from
+            -- rollback history
+            history <-
+                transact runner
+                    $ CFStore.queryHistory Rollbacks
+            let availablePoints =
+                    [ setupStartingPoint
+                    | null history
+                    ]
 
             -- Create checkpoint action
             let setCheckpoint point =
@@ -283,7 +275,8 @@ main = withUtf8 $ do
 
             -- Log before starting the application
             trace ApplicationStarting
-            traceWith metricsEvent $ SyncPhaseEvent Synced
+            traceWith metricsEvent
+                $ SyncPhaseEvent Synced
 
             let epochSlots =
                     EpochSlots setupEpochSlots
@@ -300,8 +293,12 @@ main = withUtf8 $ do
                             setCheckpoint
                             metricsEvent
                             (contra Application)
-                            state
-                            slots
+                            runner
+                            backendInit
+                            armageddonParams
+                            (fromIntegral setupSecurityParam)
+                            initialPhase
+                            availablePoints
                     N2C{n2cSocket} ->
                         applicationN2C
                             epochSlots
@@ -311,8 +308,12 @@ main = withUtf8 $ do
                             setCheckpoint
                             metricsEvent
                             (contra Application)
-                            state
-                            slots
+                            runner
+                            backendInit
+                            armageddonParams
+                            (fromIntegral setupSecurityParam)
+                            initialPhase
+                            availablePoints
                 )
                     `catch` \(e :: SomeException) -> do
                         trace
@@ -322,4 +323,7 @@ main = withUtf8 $ do
                         error
                             $ "main: application crashed: "
                                 ++ displayException e
-            error $ "main: application exited unexpectedly with: " ++ show result
+            error
+                $ "main: application exited"
+                    ++ " unexpectedly with: "
+                    ++ show result
