@@ -254,6 +254,79 @@ mkFollowing csmtOps =
                     Delete k -> csmtDelete csmtOps k
         }
 
+-- | Column family definitions shared by all DB helpers.
+columnFamilies :: [(String, Config)]
+columnFamilies =
+    [ ("kv", testConfig)
+    , ("csmt", testConfig)
+    , ("rollbacks", testConfig)
+    , ("config", testConfig)
+    , ("journal", testConfig)
+    , ("rollbacks2", testConfig)
+    ]
+
+-- | Open a DB at a given path and run an action.
+withDBAt
+    :: FilePath
+    -> ( TestPhase
+         -> (forall a. Tx a -> IO a)
+         -> IO r
+       )
+    -> IO r
+withDBAt dir action =
+    withDBCF
+        dir
+        testConfig
+        columnFamilies
+        $ \db -> do
+            RunTransaction{transact} <-
+                newRunRocksDBTransaction
+                    db
+                    testPrisms
+            let csmtOps =
+                    mkCSMTOps testFromKV testHashing
+            -- Set up sentinel
+            transact
+                $ Store.armageddonSetup
+                    Rollbacks
+                    Origin
+                    Nothing
+            -- Start in following mode
+            let phase =
+                    InFollowing 1 (mkFollowing csmtOps)
+            action phase transact
+
+{- | Open an existing DB at a given path, resuming in
+following mode from a known tip. Does not set up a
+sentinel (assumes one already exists).
+-}
+withDBAtResume
+    :: FilePath
+    -> ( TestPhase
+         -> (forall a. Tx a -> IO a)
+         -> IO r
+       )
+    -> IO r
+withDBAtResume dir action =
+    withDBCF
+        dir
+        testConfig
+        columnFamilies
+        $ \db -> do
+            RunTransaction{transact} <-
+                newRunRocksDBTransaction
+                    db
+                    testPrisms
+            let csmtOps =
+                    mkCSMTOps testFromKV testHashing
+            -- Count existing rollback points to resume
+            n <-
+                transact
+                    $ Store.countPoints Rollbacks
+            let phase =
+                    InFollowing n (mkFollowing csmtOps)
+            action phase transact
+
 -- | Set up a fresh DB with the Runner API.
 withFreshDB
     :: ( TestPhase
@@ -263,33 +336,7 @@ withFreshDB
     -> IO r
 withFreshDB action =
     withSystemTempDirectory "e2e-runner" $ \dir ->
-        withDBCF
-            dir
-            testConfig
-            [ ("kv", testConfig)
-            , ("csmt", testConfig)
-            , ("rollbacks", testConfig)
-            , ("config", testConfig)
-            , ("journal", testConfig)
-            , ("rollbacks2", testConfig)
-            ]
-            $ \db -> do
-                RunTransaction{transact} <-
-                    newRunRocksDBTransaction
-                        db
-                        testPrisms
-                let csmtOps =
-                        mkCSMTOps testFromKV testHashing
-                -- Set up sentinel
-                transact
-                    $ Store.armageddonSetup
-                        Rollbacks
-                        Origin
-                        Nothing
-                -- Start in following mode
-                let phase =
-                        InFollowing 1 (mkFollowing csmtOps)
-                action phase transact
+        withDBAt dir action
 
 -- | Set up a fresh DB starting in Restoration mode.
 withFreshDBRestoration
@@ -303,13 +350,7 @@ withFreshDBRestoration action =
         withDBCF
             dir
             testConfig
-            [ ("kv", testConfig)
-            , ("csmt", testConfig)
-            , ("rollbacks", testConfig)
-            , ("config", testConfig)
-            , ("journal", testConfig)
-            , ("rollbacks2", testConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 RunTransaction{transact} <-
                     newRunRocksDBTransaction
@@ -885,3 +926,200 @@ spec = describe "E2E Runner" $ do
                         valAfter `shouldBe` Nothing
                     InRestoration _ _ ->
                         fail "expected Following"
+
+    describe "Crash recovery" $ do
+        it "data persists after close and reopen" $ do
+            withSystemTempDirectory "e2e-crash" $ \dir -> do
+                -- First session: apply blocks with inserts
+                let key1 = mkTestKey "persist1"
+                    val1 = mkTestValue "value1"
+                    key2 = mkTestKey "persist2"
+                    val2 = mkTestValue "value2"
+                withDBAt dir $ \phase transact -> do
+                    phase1 <-
+                        transact
+                            $ processBlock
+                                Rollbacks
+                                maxBound
+                                (At (SlotNo 1))
+                                ( SlotNo 1
+                                , [Insert key1 val1]
+                                )
+                                phase
+                    _ <-
+                        transact
+                            $ processBlock
+                                Rollbacks
+                                maxBound
+                                (At (SlotNo 2))
+                                ( SlotNo 2
+                                , [Insert key2 val2]
+                                )
+                                phase1
+                    pure ()
+                -- Second session: reopen and verify
+                withDBAtResume dir $ \_phase transact -> do
+                    -- KV data survived
+                    v1 <-
+                        transact
+                            $ KV.query KVCol key1
+                    v1 `shouldBe` Just val1
+                    v2 <-
+                        transact
+                            $ KV.query KVCol key2
+                    v2 `shouldBe` Just val2
+                    -- Tip survived
+                    mTip <-
+                        transact
+                            $ Store.queryTip Rollbacks
+                    mTip `shouldBe` Just (At (SlotNo 2))
+
+        it "crash + recovery produces same state as clean run" $ do
+            let blocks =
+                    [
+                        ( SlotNo 1
+                        ,
+                            [ Insert (mkTestKey "a") (mkTestValue "1")
+                            , Insert (mkTestKey "b") (mkTestValue "2")
+                            ]
+                        )
+                    ,
+                        ( SlotNo 2
+                        ,
+                            [ Insert (mkTestKey "c") (mkTestValue "3")
+                            , Delete (mkTestKey "a")
+                            ]
+                        )
+                    ,
+                        ( SlotNo 3
+                        ,
+                            [ Insert (mkTestKey "d") (mkTestValue "4")
+                            ]
+                        )
+                    ,
+                        ( SlotNo 4
+                        ,
+                            [ Insert (mkTestKey "e") (mkTestValue "5")
+                            , Delete (mkTestKey "b")
+                            ]
+                        )
+                    ]
+                applyBlocks phase transact = do
+                    let go p [] = pure p
+                        go p ((slot, ops) : rest) = do
+                            p' <-
+                                transact
+                                    $ processBlock
+                                        Rollbacks
+                                        maxBound
+                                        (At slot)
+                                        (slot, ops)
+                                        p
+                            go p' rest
+                    go phase blocks
+            -- Clean run: all blocks in one session
+            cleanHistory <-
+                withSystemTempDirectory "e2e-clean" $ \dir ->
+                    withDBAt dir $ \phase transact -> do
+                        _ <- applyBlocks phase transact
+                        transact
+                            $ Store.queryHistory Rollbacks
+            -- Crash run: first half, close, reopen, second half
+            crashHistory <-
+                withSystemTempDirectory "e2e-crash-eq" $ \dir -> do
+                    let (firstHalf, secondHalf) =
+                            splitAt 2 blocks
+                    -- First session: apply first half
+                    withDBAt dir $ \phase transact -> do
+                        let go p [] = pure p
+                            go p ((slot, ops) : rest) = do
+                                p' <-
+                                    transact
+                                        $ processBlock
+                                            Rollbacks
+                                            maxBound
+                                            (At slot)
+                                            (slot, ops)
+                                            p
+                                go p' rest
+                        _ <- go phase firstHalf
+                        pure ()
+                    -- Second session: reopen and apply rest
+                    withDBAtResume dir $ \phase transact -> do
+                        _ <- do
+                            let go p [] = pure p
+                                go p ((slot, ops) : rest) = do
+                                    p' <-
+                                        transact
+                                            $ processBlock
+                                                Rollbacks
+                                                maxBound
+                                                (At slot)
+                                                (slot, ops)
+                                                p
+                                    go p' rest
+                            go phase secondHalf
+                        transact
+                            $ Store.queryHistory Rollbacks
+            -- Both should have same number of rollback points
+            length crashHistory
+                `shouldBe` length cleanHistory
+            -- Both should agree on the KV state
+            withSystemTempDirectory "e2e-clean-kv" $ \cleanDir ->
+                withSystemTempDirectory "e2e-crash-kv" $ \crashDir -> do
+                    -- Reopen clean DB and check keys
+                    cleanKV <-
+                        withDBAt cleanDir $ \phase transact -> do
+                            _ <- applyBlocks phase transact
+                            forM
+                                [ mkTestKey "a"
+                                , mkTestKey "b"
+                                , mkTestKey "c"
+                                , mkTestKey "d"
+                                , mkTestKey "e"
+                                ]
+                                $ \k ->
+                                    transact
+                                        $ KV.query KVCol k
+                    -- Reopen crash DB and check keys
+                    let (firstHalf, secondHalf) =
+                            splitAt 2 blocks
+                    crashKV <- do
+                        withDBAt crashDir $ \phase transact -> do
+                            let go p [] = pure p
+                                go p ((slot, ops) : rest) = do
+                                    p' <-
+                                        transact
+                                            $ processBlock
+                                                Rollbacks
+                                                maxBound
+                                                (At slot)
+                                                (slot, ops)
+                                                p
+                                    go p' rest
+                            _ <- go phase firstHalf
+                            pure ()
+                        withDBAtResume crashDir $ \phase transact -> do
+                            let go p [] = pure p
+                                go p ((slot, ops) : rest) = do
+                                    p' <-
+                                        transact
+                                            $ processBlock
+                                                Rollbacks
+                                                maxBound
+                                                (At slot)
+                                                (slot, ops)
+                                                p
+                                    go p' rest
+                            _ <- go phase secondHalf
+                            forM
+                                [ mkTestKey "a"
+                                , mkTestKey "b"
+                                , mkTestKey "c"
+                                , mkTestKey "d"
+                                , mkTestKey "e"
+                                ]
+                                $ \k ->
+                                    transact
+                                        $ KV.query KVCol k
+                    crashKV `shouldBe` cleanKV
