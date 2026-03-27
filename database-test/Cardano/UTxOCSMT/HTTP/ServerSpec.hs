@@ -29,6 +29,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     , TipOf
+    , WithSentinel (..)
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
@@ -90,7 +91,6 @@ import Network.Wai.Test
     , setPath
     )
 import Ouroboros.Network.Block (SlotNo (..))
-import Ouroboros.Network.Point (WithOrigin (..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
@@ -308,7 +308,7 @@ withFreshDB action =
                 transact
                     $ Store.armageddonSetup
                         Rollbacks
-                        Origin
+                        Sentinel
                         Nothing
                 let phase =
                         InFollowing 1 (mkFollowing csmtOps)
@@ -345,7 +345,7 @@ withFreshDBPrefixed action =
                 transact
                     $ Store.armageddonSetup
                         Rollbacks
-                        Origin
+                        Sentinel
                         Nothing
                 let phase =
                         InFollowing 1 (mkFollowing csmtOps)
@@ -368,7 +368,7 @@ queryTestMerkleRoots (RunTransaction runTx) =
         pure $ concatMap toEntry (reverse history)
   where
     toEntry (slot, RollbackPoint{rpMeta}) = case (slot, rpMeta) of
-        (At slotNo, Just (blockHash, merkleRoot)) ->
+        (Value slotNo, Just (blockHash, merkleRoot)) ->
             [ MerkleRootEntry
                 { slotNo
                 , blockHash
@@ -567,7 +567,7 @@ spec = do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 100))
+                                (Value (SlotNo 100))
                                 ( SlotNo 100
                                 , [Insert key1 val1]
                                 )
@@ -579,7 +579,7 @@ spec = do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 200))
+                                (Value (SlotNo 200))
                                 ( SlotNo 200
                                 , [Insert key2 val2]
                                 )
@@ -635,7 +635,7 @@ spec = do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 100))
+                                (Value (SlotNo 100))
                                 ( SlotNo 100
                                 , [Insert testKey testValue]
                                 )
@@ -708,7 +708,7 @@ spec = do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 100))
+                                (Value (SlotNo 100))
                                 ( SlotNo 100
                                 ,
                                     [ Insert key1 value1

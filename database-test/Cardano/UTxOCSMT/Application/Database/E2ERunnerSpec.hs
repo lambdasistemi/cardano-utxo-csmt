@@ -28,6 +28,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     , TipOf
+    , WithSentinel (..)
     )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
@@ -60,7 +61,6 @@ import Database.RocksDB
     , withDBCF
     )
 import Ouroboros.Network.Block (SlotNo (..))
-import Ouroboros.Network.Point (WithOrigin (..))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Test.QuickCheck (choose, forAll, ioProperty, property)
@@ -289,7 +289,7 @@ withDBAt dir action =
             transact
                 $ Store.armageddonSetup
                     Rollbacks
-                    Origin
+                    Sentinel
                     Nothing
             -- Start in following mode
             let phase =
@@ -372,7 +372,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         (SlotNo 1, [])
                         phase
             pure ()
@@ -387,7 +387,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key1 val1]
                         )
@@ -400,7 +400,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 2))
+                        (Value (SlotNo 2))
                         ( SlotNo 2
                         , [Insert key2 val2]
                         )
@@ -414,7 +414,7 @@ spec = describe "E2E Runner" $ do
                                 Rollbacks
                                 f
                                 n
-                                (At (SlotNo 1))
+                                (Value (SlotNo 1))
                     case result of
                         Store.RollbackSucceeded deleted ->
                             deleted `shouldBe` 1
@@ -436,7 +436,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             ( SlotNo 1
                             , [Insert key1 val1, Insert key2 val2]
                             )
@@ -449,7 +449,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 2))
+                            (Value (SlotNo 2))
                             ( SlotNo 2
                             , [Delete key1, Insert key3 val3]
                             )
@@ -460,19 +460,19 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 3))
+                            (Value (SlotNo 3))
                             (SlotNo 3, [])
                             phase2
                 pure ()
 
-    it "rollback to Origin" $ do
+    it "rollback to Sentinel" $ do
         withFreshDB $ \phase transact -> do
             phase1 <-
                 transact
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         (SlotNo 1, [])
                         phase
             case phase1 of
@@ -483,7 +483,7 @@ spec = describe "E2E Runner" $ do
                                 Rollbacks
                                 f
                                 n
-                                Origin
+                                Sentinel
                     case result of
                         Store.RollbackSucceeded _ ->
                             pure ()
@@ -502,7 +502,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key1 val1]
                         )
@@ -523,7 +523,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         1
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         (SlotNo 1, [])
                         phase
             phase2 <-
@@ -531,7 +531,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         1
-                        (At (SlotNo 2))
+                        (Value (SlotNo 2))
                         (SlotNo 2, [])
                         phase1
             _ <-
@@ -539,7 +539,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         1
-                        (At (SlotNo 3))
+                        (Value (SlotNo 3))
                         (SlotNo 3, [])
                         phase2
             -- With k=1, only slot 2 and 3 remain
@@ -591,7 +591,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 1))
+                        (Value (SlotNo 1))
                         ( SlotNo 1
                         , [Insert key366b_0 "out-366b-0"]
                         )
@@ -602,7 +602,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 12903843))
+                        (Value (SlotNo 12903843))
                         ( SlotNo 12903843
                         ,
                             [ Delete key366b_0
@@ -617,7 +617,7 @@ spec = describe "E2E Runner" $ do
                     $ processBlock
                         Rollbacks
                         maxBound
-                        (At (SlotNo 12912634))
+                        (Value (SlotNo 12912634))
                         ( SlotNo 12912634
                         ,
                             [ Delete keyd4be_1
@@ -633,8 +633,8 @@ spec = describe "E2E Runner" $ do
             mTip <-
                 transact
                     $ Store.queryTip Rollbacks
-            -- Fresh DB has sentinel at Origin
-            mTip `shouldBe` Just Origin
+            -- Fresh DB has sentinel at Sentinel
+            mTip `shouldBe` Just Sentinel
 
     describe "Restoration mode" $ do
         it "processes blocks in restoration" $ do
@@ -646,7 +646,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             ( SlotNo 1
                             , [Insert key1 val1]
                             )
@@ -664,7 +664,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             (SlotNo 1, [Insert (mkTestKey "k") (mkTestValue "v")])
                             phase
                 -- Rollback column should be empty
@@ -683,7 +683,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             ( SlotNo 1
                             , [Insert key1 val1]
                             )
@@ -701,7 +701,7 @@ spec = describe "E2E Runner" $ do
                                 $ processBlock
                                     Rollbacks
                                     maxBound
-                                    (At (SlotNo 2))
+                                    (Value (SlotNo 2))
                                     ( SlotNo 2
                                     , [Insert (mkTestKey "utxo2") (mkTestValue "output2")]
                                     )
@@ -723,7 +723,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             ( SlotNo 1
                             , [Insert (mkTestKey "utxo1") (mkTestValue "out1")]
                             )
@@ -733,7 +733,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 2))
+                            (Value (SlotNo 2))
                             ( SlotNo 2
                             , [Insert (mkTestKey "utxo2") (mkTestValue "out2")]
                             )
@@ -743,7 +743,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 3))
+                            (Value (SlotNo 3))
                             ( SlotNo 3
                             , [Insert (mkTestKey "utxo3") (mkTestValue "out3")]
                             )
@@ -757,7 +757,7 @@ spec = describe "E2E Runner" $ do
                         transact
                             $ Store.armageddonSetup
                                 Rollbacks
-                                (At (SlotNo 3))
+                                (Value (SlotNo 3))
                                 Nothing
                         let phase4 =
                                 InFollowing 1 following
@@ -767,7 +767,7 @@ spec = describe "E2E Runner" $ do
                                 $ processBlock
                                     Rollbacks
                                     maxBound
-                                    (At (SlotNo 4))
+                                    (Value (SlotNo 4))
                                     ( SlotNo 4
                                     , [Insert (mkTestKey "utxo4") (mkTestValue "out4")]
                                     )
@@ -777,7 +777,7 @@ spec = describe "E2E Runner" $ do
                                 $ processBlock
                                     Rollbacks
                                     maxBound
-                                    (At (SlotNo 5))
+                                    (Value (SlotNo 5))
                                     ( SlotNo 5
                                     , [Insert (mkTestKey "utxo5") (mkTestValue "out5")]
                                     )
@@ -791,7 +791,7 @@ spec = describe "E2E Runner" $ do
                                             Rollbacks
                                             f
                                             n
-                                            (At (SlotNo 4))
+                                            (Value (SlotNo 4))
                                 case result of
                                     Store.RollbackSucceeded deleted ->
                                         deleted `shouldBe` 1
@@ -817,7 +817,7 @@ spec = describe "E2E Runner" $ do
                                     $ processBlock
                                         Rollbacks
                                         (fromIntegral k)
-                                        (At slot)
+                                        (Value slot)
                                         (slot, [])
                                         p
                             )
@@ -844,7 +844,7 @@ spec = describe "E2E Runner" $ do
                                         $ processBlock
                                             Rollbacks
                                             (fromIntegral k)
-                                            (At slot)
+                                            (Value slot)
                                             (slot, [])
                                             p
                                 )
@@ -863,7 +863,7 @@ spec = describe "E2E Runner" $ do
                                                 Rollbacks
                                                 following
                                                 count
-                                                (At target)
+                                                (Value target)
                                     case result of
                                         Store.RollbackSucceeded _ ->
                                             pure ()
@@ -888,7 +888,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 1))
+                            (Value (SlotNo 1))
                             (SlotNo 1, [])
                             phase
                 -- Slot 2: insert key
@@ -897,7 +897,7 @@ spec = describe "E2E Runner" $ do
                         $ processBlock
                             Rollbacks
                             maxBound
-                            (At (SlotNo 2))
+                            (Value (SlotNo 2))
                             ( SlotNo 2
                             , [Insert key1 val1]
                             )
@@ -918,7 +918,7 @@ spec = describe "E2E Runner" $ do
                                     Rollbacks
                                     f
                                     n
-                                    (At (SlotNo 1))
+                                    (Value (SlotNo 1))
                         -- Key from slot 2 should be gone
                         valAfter <-
                             transact
@@ -941,7 +941,7 @@ spec = describe "E2E Runner" $ do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 1))
+                                (Value (SlotNo 1))
                                 ( SlotNo 1
                                 , [Insert key1 val1]
                                 )
@@ -951,7 +951,7 @@ spec = describe "E2E Runner" $ do
                             $ processBlock
                                 Rollbacks
                                 maxBound
-                                (At (SlotNo 2))
+                                (Value (SlotNo 2))
                                 ( SlotNo 2
                                 , [Insert key2 val2]
                                 )
@@ -972,7 +972,7 @@ spec = describe "E2E Runner" $ do
                     mTip <-
                         transact
                             $ Store.queryTip Rollbacks
-                    mTip `shouldBe` Just (At (SlotNo 2))
+                    mTip `shouldBe` Just (Value (SlotNo 2))
 
         it "crash + recovery produces same state as clean run" $ do
             let blocks =
@@ -1012,7 +1012,7 @@ spec = describe "E2E Runner" $ do
                                     $ processBlock
                                         Rollbacks
                                         maxBound
-                                        (At slot)
+                                        (Value slot)
                                         (slot, ops)
                                         p
                             go p' rest
@@ -1038,7 +1038,7 @@ spec = describe "E2E Runner" $ do
                                         $ processBlock
                                             Rollbacks
                                             maxBound
-                                            (At slot)
+                                            (Value slot)
                                             (slot, ops)
                                             p
                                 go p' rest
@@ -1054,7 +1054,7 @@ spec = describe "E2E Runner" $ do
                                             $ processBlock
                                                 Rollbacks
                                                 maxBound
-                                                (At slot)
+                                                (Value slot)
                                                 (slot, ops)
                                                 p
                                     go p' rest
@@ -1093,7 +1093,7 @@ spec = describe "E2E Runner" $ do
                                             $ processBlock
                                                 Rollbacks
                                                 maxBound
-                                                (At slot)
+                                                (Value slot)
                                                 (slot, ops)
                                                 p
                                     go p' rest
@@ -1107,7 +1107,7 @@ spec = describe "E2E Runner" $ do
                                             $ processBlock
                                                 Rollbacks
                                                 maxBound
-                                                (At slot)
+                                                (Value slot)
                                                 (slot, ops)
                                                 p
                                     go p' rest

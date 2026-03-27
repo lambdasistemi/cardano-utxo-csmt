@@ -3,13 +3,13 @@ module Cardano.UTxOCSMT.Application.Database.InterfaceSpec (spec) where
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
     , Query (..)
+    , WithSentinel (..)
     , hoistQuery
     , inverseOp
     )
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.Functor.Identity (Identity (..))
-import Ouroboros.Network.Point (WithOrigin (..))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.QuickCheck (Gen, arbitrary, forAll)
 
@@ -48,8 +48,8 @@ spec = describe "Database.Interface" $ do
                 let q =
                         Query
                             { getValue = \_ -> Identity (Just bs)
-                            , getTip = Identity Origin
-                            , getFinality = Identity Origin
+                            , getTip = Identity Sentinel
+                            , getFinality = Identity Sentinel
                             , getByAddress = \_ -> Identity []
                             }
                     q' = hoistQuery id q
@@ -59,9 +59,9 @@ spec = describe "Database.Interface" $ do
             let q =
                     Query
                         { getValue = \_ -> Identity (Nothing :: Maybe ByteString)
-                        , getTip = Identity (At (42 :: Int))
-                        , getFinality = Identity Origin
+                        , getTip = Identity (Value (42 :: Int))
+                        , getFinality = Identity Sentinel
                         , getByAddress = \_ -> Identity []
                         }
                 q' = hoistQuery id q
-            runIdentity (getTip q') `shouldBe` At 42
+            runIdentity (getTip q') `shouldBe` Value 42

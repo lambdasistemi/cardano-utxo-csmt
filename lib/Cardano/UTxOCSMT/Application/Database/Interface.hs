@@ -20,6 +20,9 @@ module Cardano.UTxOCSMT.Application.Database.Interface
     , Operation (..)
     , inverseOp
 
+      -- * Sentinel wrapper
+    , WithSentinel (..)
+
       -- * Update interface
     , Update (..)
     , State (..)
@@ -35,8 +38,14 @@ where
 import Cardano.UTxOCSMT.Ouroboros.Types (TipOf)
 import Data.ByteString (ByteString)
 import Data.List (sortOn)
-import Ouroboros.Network.Point (WithOrigin (..))
 import Prelude hiding (truncate)
+
+{- | Database sentinel wrapper for rollback column keys.
+Unlike ouroboros's 'WithOrigin', this type is explicitly
+a storage concept (sentinel marker), not a chain concept.
+-}
+data WithSentinel a = Sentinel | Value a
+    deriving (Eq, Ord, Show)
 
 -- | Represents an operation on the database
 data Operation key value
@@ -71,7 +80,7 @@ data Update m slot key value = Update
     moving the tip forward
     -}
     , rollbackTipApply
-        :: WithOrigin slot
+        :: WithSentinel slot
         -> m (State m slot key value)
     -- ^ Rollback to the given slot, possibly truncating the database
     }
@@ -80,9 +89,9 @@ data Update m slot key value = Update
 data Query m slot key value = Query
     { getValue :: key -> m (Maybe value)
     -- ^ Look up a value by key
-    , getTip :: m (WithOrigin slot)
+    , getTip :: m (WithSentinel slot)
     -- ^ Get the current tip slot (latest applied)
-    , getFinality :: m (WithOrigin slot)
+    , getFinality :: m (WithSentinel slot)
     -- ^ Get the finality slot (immutable point)
     , getByAddress :: ByteString -> m [(key, value)]
     -- ^ Get all UTxOs at a given address (raw address bytes)
@@ -119,8 +128,8 @@ inverseOp value op = case op of
 
 -- | A dump of the database contents for inspection/testing
 data Dump slot key value = Dump
-    { dumpTip :: WithOrigin slot
-    , dumpFinality :: WithOrigin slot
+    { dumpTip :: WithSentinel slot
+    , dumpFinality :: WithSentinel slot
     , dumpAssocs :: [(key, value)]
     }
     deriving (Show, Eq)
@@ -129,8 +138,8 @@ data Dump slot key value = Dump
 emptyDump :: Dump slot key value
 emptyDump =
     Dump
-        { dumpTip = Origin
-        , dumpFinality = Origin
+        { dumpTip = Sentinel
+        , dumpFinality = Sentinel
         , dumpAssocs = []
         }
 
