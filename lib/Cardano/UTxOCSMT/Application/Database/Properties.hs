@@ -20,6 +20,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     ( Dump (..)
     , Operation (..)
     , TipOf
+    , WithSentinel (..)
     , emptyDump
     )
 import Cardano.UTxOCSMT.Application.Database.Properties.Expected
@@ -44,7 +45,6 @@ import Control.Monad.State
     )
 import Data.List.NonEmpty (NonEmpty (..), tails, toList)
 import GHC.Stack (HasCallStack)
-import Ouroboros.Network.Point (WithOrigin (..))
 import Test.QuickCheck
     ( Arbitrary (arbitrary)
     , Gen
@@ -89,13 +89,13 @@ assertingJust
 assertingJust msg Nothing _ = assert msg False
 assertingJust _ (Just x) f = f x
 
-genWithOrigin
+genWithSentinel
     :: Gen slot
-    -> Gen (WithOrigin slot)
-genWithOrigin genSlot =
+    -> Gen (WithSentinel slot)
+genWithSentinel genSlot =
     frequency
-        [ (1, return Origin)
-        , (8, fmap At genSlot)
+        [ (1, return Sentinel)
+        , (8, fmap Value genSlot)
         ]
 
 propertyTipIsAfterFinalityOrMissing
@@ -110,11 +110,11 @@ propertyTipIsAfterFinalityOrMissing = do
 
 genSlotAfter
     :: PropertyConstraints m slot key value
-    => WithOrigin slot
+    => WithSentinel slot
     -> PropertyWithExpected m slot key value slot
 genSlotAfter base = do
     Generator{genSlot} <- asksGenerator
-    pick $ genSlot `suchThat` (\s -> At s > base)
+    pick $ genSlot `suchThat` (\s -> Value s > base)
 
 generateOperations
     :: PropertyConstraints m slot key value
@@ -159,7 +159,7 @@ populateWithSomeContent
         slot
         key
         value
-        [(WithOrigin slot, Dump slot key value)]
+        [(WithSentinel slot, Dump slot key value)]
 populateWithSomeContent = do
     NonNegative n <- pick arbitrary
     replicateM n $ do
@@ -168,7 +168,7 @@ populateWithSomeContent = do
         ops <- generateOperations
         forwardTip slot ops
         dump <- getDump
-        pure (At slot, dump)
+        pure (Value slot, dump)
 
 {- | Property: forwarding at or before tip is a no-op
 forwarding must move the tip ahead
@@ -181,8 +181,8 @@ propertyForwardBeforeTipIsNoOp = do
     tipBefore <- getTip
     logOnFailure $ "Current tip: " ++ show tipBefore
     case tipBefore of
-        Origin -> pure ()
-        At tipSlot -> do
+        Sentinel -> pure ()
+        Value tipSlot -> do
             slot <- pick $ genSlot `suchThat` (<= tipSlot)
             ops <- generateOperations
             logOnFailure $ "Forwarding to slot: " ++ show slot
@@ -208,8 +208,8 @@ propertyForwardAfterTipAppliesChanges = do
     Generator{genSlot} <- asksGenerator
     tipBefore <- getTip
     slot <- case tipBefore of
-        Origin -> pick genSlot
-        At tipSlot -> pick $ genSlot `suchThat` (> tipSlot)
+        Sentinel -> pick genSlot
+        Value tipSlot -> pick $ genSlot `suchThat` (> tipSlot)
     ops <- generateOperations
     old@Dump
         { dumpFinality = oldFinality
@@ -233,7 +233,7 @@ propertyForwardAfterTipAppliesChanges = do
         $ newFinality >= oldFinality
     assert
         "Tip should be updated to the newest slot after forwarding"
-        $ newTip == At slot
+        $ newTip == Value slot
     assert
         "Changes were applied correctly after forwarding"
         $ flip all (tails ops)
@@ -263,8 +263,8 @@ propertyRollbackAfterTipDoesNothing = do
     tipBefore <- getTip
     logOnFailure $ "Current tip: " ++ show tipBefore
     slotToRollbackTo <- case tipBefore of
-        Origin -> pure Origin
-        At tipSlot -> pick $ At <$> genSlot `suchThat` (>= tipSlot)
+        Sentinel -> pure Sentinel
+        Value tipSlot -> pick $ Value <$> genSlot `suchThat` (>= tipSlot)
     logOnFailure $ "Rolling back to slot: " ++ show slotToRollbackTo
     oldDump <- getDump
     logOnFailure $ "Old dump: " ++ show oldDump
@@ -281,7 +281,7 @@ rolling back after or at the first one will restore the database to that state
 -}
 propertyRollbackAfterBeforeTipUndoesChanges
     :: PropertyConstraints m slot key value
-    => NonEmpty (WithOrigin slot, Dump slot key value)
+    => NonEmpty (WithSentinel slot, Dump slot key value)
     -> PropertyWithExpected m slot key value ()
 propertyRollbackAfterBeforeTipUndoesChanges history = do
     tip <- getTip
@@ -319,13 +319,13 @@ propertyBlocksDeeperThanKArePruned = do
     finality <- getFinality
     logOnFailure $ "Current finality: " ++ show finality
     case finality of
-        Origin -> pure ()
-        At finalitySlot -> do
+        Sentinel -> pure ()
+        Value finalitySlot -> do
             Generator{genSlot} <- asksGenerator
             slot <-
                 pick
-                    $ genWithOrigin genSlot
-                        `suchThat` (< At finalitySlot)
+                    $ genWithSentinel genSlot
+                        `suchThat` (< Value finalitySlot)
             logOnFailure
                 $ "Rolling back before finality to: "
                     ++ show slot
@@ -343,7 +343,7 @@ should be reachable by rollback.
 -}
 propertyBlocksWithinKAreRollbackable
     :: PropertyConstraints m slot key value
-    => NonEmpty (WithOrigin slot, Dump slot key value)
+    => NonEmpty (WithSentinel slot, Dump slot key value)
     -> PropertyWithExpected m slot key value ()
 propertyBlocksWithinKAreRollbackable history = do
     k <- asksSecurityParam

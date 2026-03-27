@@ -41,6 +41,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Query (..)
+    , WithSentinel
     , hoistQuery
     )
 import ChainFollower.Rollbacks.Store qualified as Store
@@ -62,7 +63,6 @@ import Database.KV.Transaction
     , iterating
     , query
     )
-import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | Create a query interface
 mkQuery
@@ -125,7 +125,7 @@ getAllMerkleRoots
         cf
         (Columns slot hash key value)
         op
-        [(WithOrigin slot, hash, Maybe hash)]
+        [(WithSentinel slot, hash, Maybe hash)]
 getAllMerkleRoots =
     iterating RollbackPoints $ do
         ml <- lastEntry

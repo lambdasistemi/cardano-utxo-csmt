@@ -33,6 +33,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , queryByAddress
     , queryMerkleRoot
     )
+import Cardano.UTxOCSMT.Application.Database.Interface
+    ( WithSentinel (..)
+    )
 import Cardano.UTxOCSMT.Application.Metrics
     ( Metrics (..)
     , SyncPhase (..)
@@ -92,9 +95,9 @@ queryMerkleRoots (RunTransaction runTx) =
   where
     toMerkleRootEntry (slot, blockHash, merkleRoot) =
         case slot of
-            Origin -> []
-            At (Network.Point Origin) -> []
-            At (Network.Point (At (Block slotNo _))) ->
+            Sentinel -> []
+            Value (Network.Point Origin) -> []
+            Value (Network.Point (At (Block slotNo _))) ->
                 [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
 
 {- | Retrieve the inclusion proof and UTxO value for a transaction input.

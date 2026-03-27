@@ -17,15 +17,19 @@ module Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
       -- * KV alias
     , RollbackPointKV
 
+      -- * Sentinel wrapper (re-exported from Interface)
+    , WithSentinel (..)
+
       -- * Serialization
     , rollbackPointPrism
     , rollbackListPrism
-    , withOriginPrism
+    , withSentinelPrism
     )
 where
 
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
+    , WithSentinel (..)
     )
 import ChainFollower.Rollbacks.Column (RollbackKV)
 import ChainFollower.Rollbacks.Types qualified as RP
@@ -42,12 +46,11 @@ import Control.Lens
 import Control.Monad (replicateM)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
-import Ouroboros.Network.Point (WithOrigin (..))
 
 -- | KV pair for rollback point storage.
 type RollbackPointKV slot hash key value =
     RollbackKV
-        (WithOrigin slot)
+        (WithSentinel slot)
         (Operation key value)
         (hash, Maybe hash)
 
@@ -201,47 +204,48 @@ rollbackPointPrism hashPrism keyPrism valuePrism =
                     "rollbackPointPrism: invalid\
                     \ operation"
 
--- | Prism for 'WithOrigin' using CBOR encoding.
-withOriginPrism
+-- | Prism for 'WithSentinel' using CBOR encoding.
+withSentinelPrism
     :: forall slot
      . Prism' ByteString slot
-    -> Prism' ByteString (WithOrigin slot)
-withOriginPrism slotP = prism' encode decode
+    -> Prism' ByteString (WithSentinel slot)
+withSentinelPrism slotP = prism' encode decode
   where
-    encode :: WithOrigin slot -> ByteString
-    encode Origin =
+    encode :: WithSentinel slot -> ByteString
+    encode Sentinel =
         encodeCBOR $ CBOR.encodeWord 0
-    encode (At slot) =
+    encode (Value slot) =
         encodeCBOR
             $ CBOR.encodeListLen 2
                 <> CBOR.encodeWord 1
                 <> encodeReview slotP slot
 
-    decode :: ByteString -> Maybe (WithOrigin slot)
+    decode :: ByteString -> Maybe (WithSentinel slot)
     decode = decodeCBOR $ do
         tokenType <- CBOR.peekTokenType
         case tokenType of
             CBOR.TypeUInt -> do
                 tag <- CBOR.decodeWord
                 case tag of
-                    0 -> pure Origin
+                    0 -> pure Sentinel
                     _ ->
                         fail
-                            "withOriginPrism:\
+                            "withSentinelPrism:\
                             \ invalid tag"
             CBOR.TypeListLen -> do
                 _ <- CBOR.decodeListLen
                 tag <- CBOR.decodeWord
                 case tag of
                     1 ->
-                        At <$> decodePreview slotP
+                        Value
+                            <$> decodePreview slotP
                     _ ->
                         fail
-                            "withOriginPrism:\
+                            "withSentinelPrism:\
                             \ invalid tag"
             _ ->
                 fail
-                    "withOriginPrism:\
+                    "withSentinelPrism:\
                     \ unexpected token"
 
 {- | Prism for the new rollback column where

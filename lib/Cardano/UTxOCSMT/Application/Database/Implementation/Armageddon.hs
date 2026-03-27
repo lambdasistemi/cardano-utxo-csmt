@@ -14,6 +14,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
     )
+import Cardano.UTxOCSMT.Application.Database.Interface
+    ( WithSentinel (..)
+    )
 import ChainFollower.Rollbacks.Store qualified as Store
 import Control.Monad (when)
 import Control.Monad.Trans (lift)
@@ -29,7 +32,6 @@ import Database.KV.Transaction
     , delete
     , iterating
     )
-import Ouroboros.Network.Point (WithOrigin (..))
 
 data ArmageddonTrace
     = ArmageddonStarted
@@ -122,6 +124,6 @@ setup (traceWith -> trace) (RunTransaction{transact}) armageddonParams = do
     transact
         $ Store.armageddonSetup
             RollbackPoints
-            Origin
+            Sentinel
             (Just (noHash armageddonParams, Nothing))
     trace SetupDone

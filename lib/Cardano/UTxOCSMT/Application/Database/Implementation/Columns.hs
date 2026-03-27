@@ -12,9 +12,10 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( RollbackPointKV
+    , WithSentinel
     , rollbackListPrism
     , rollbackPointPrism
-    , withOriginPrism
+    , withSentinelPrism
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation
@@ -32,7 +33,6 @@ import Database.KV.Transaction
     , KV
     , fromList
     )
-import Ouroboros.Network.Point (WithOrigin)
 
 -- | Single key for application configuration
 data ConfigKey = AppConfigKey
@@ -71,7 +71,7 @@ data Columns slot hash key value x where
             key
             value
             ( RollbackKV
-                (WithOrigin slot)
+                (WithSentinel slot)
                 [Operation key value]
                 (hash, Maybe hash)
             )
@@ -123,7 +123,7 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
         , CSMTCol :=> csmtCBORCodecs hashP
         , RollbackPoints
             :=> Codecs
-                { keyCodec = withOriginPrism slotP
+                { keyCodec = withSentinelPrism slotP
                 , valueCodec = rollbackPointPrism hashP keyP valueP
                 }
         , ConfigCol
@@ -138,7 +138,7 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
                 }
         , Rollbacks
             :=> Codecs
-                { keyCodec = withOriginPrism slotP
+                { keyCodec = withSentinelPrism slotP
                 , valueCodec =
                     rollbackListPrism hashP keyP valueP
                 }

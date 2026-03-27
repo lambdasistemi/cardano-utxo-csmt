@@ -46,6 +46,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , State (..)
     , TipOf
     , Update (..)
+    , WithSentinel (..)
     , dumpDatabase
     )
 import Cardano.UTxOCSMT.Application.Database.Interface qualified as Interface
@@ -59,7 +60,6 @@ import Control.Monad.State
     )
 import Data.Foldable (Foldable (..))
 import GHC.Stack (HasCallStack)
-import Ouroboros.Network.Point (WithOrigin (..))
 import Test.QuickCheck (Gen)
 import Test.QuickCheck.Monadic (PropertyM, run)
 
@@ -91,7 +91,7 @@ data Context m slot key value = Context
 -- | Expected state of the database
 data Expected slot key value = Expected
     { expectedAssocs :: [(key, value)]
-    , expectedTip :: WithOrigin slot
+    , expectedTip :: WithSentinel slot
     , expectedOpposites :: [(slot, [Operation key value])]
     }
     deriving (Show, Eq)
@@ -100,23 +100,23 @@ emptyExpected :: Expected slot key value
 emptyExpected =
     Expected
         { expectedAssocs = []
-        , expectedTip = Origin
+        , expectedTip = Sentinel
         , expectedOpposites = []
         }
 
 {- | Derive expected finality from the rollback window.
-The DB always starts with an Origin rollback point.
-Finality is Origin until we have more than k opposites
-(meaning Origin has been pruned away).
+The DB always starts with an Sentinel rollback point.
+Finality is Sentinel until we have more than k opposites
+(meaning Sentinel has been pruned away).
 -}
 expectedFinality
-    :: Int -> Expected slot key value -> WithOrigin slot
+    :: Int -> Expected slot key value -> WithSentinel slot
 expectedFinality k Expected{expectedOpposites}
-    | length expectedOpposites < k = Origin
+    | length expectedOpposites < k = Sentinel
     | otherwise =
         case expectedOpposites of
-            [] -> Origin
-            ops -> At . fst $ last ops
+            [] -> Sentinel
+            ops -> Value . fst $ last ops
 
 -- | Number of rollback points currently stored
 expectedRollbackDepth :: Expected slot key value -> Int
@@ -195,13 +195,13 @@ expectedAllOpposites = do
 -- | Proxy to database 'getTip'
 getTip
     :: PropertyConstraints m slot key value
-    => PropertyWithExpected m slot key value (WithOrigin slot)
+    => PropertyWithExpected m slot key value (WithSentinel slot)
 getTip = runDb $ \db -> Interface.getTip db
 
 -- | Proxy to database 'getFinality'
 getFinality
     :: PropertyConstraints m slot key value
-    => PropertyWithExpected m slot key value (WithOrigin slot)
+    => PropertyWithExpected m slot key value (WithSentinel slot)
 getFinality = runDb $ \db -> Interface.getFinality db
 
 -- | Get all expected keys
@@ -209,11 +209,11 @@ expectedKeys :: Expected slot key value -> [key]
 expectedKeys = fmap fst . expectedAssocs
 
 -- | Get the newest expected slot
-expectedNewestSlot :: Expected slot key value -> WithOrigin slot
+expectedNewestSlot :: Expected slot key value -> WithSentinel slot
 expectedNewestSlot Expected{expectedOpposites} =
     case expectedOpposites of
-        [] -> Origin
-        (x : _) -> At . fst $ x
+        [] -> Sentinel
+        (x : _) -> Value . fst $ x
 
 applyOperation :: Eq a => [(a, b)] -> Operation a b -> [(a, b)]
 applyOperation expct (Insert k v) = (k, v) : expct
@@ -252,10 +252,10 @@ expectedForward
     -> [Operation key value]
     -> Expected slot key value
 expectedForward securityParam old@Expected{expectedTip} slot ops
-    | At slot <= expectedTip = old
+    | Value slot <= expectedTip = old
     | otherwise =
         pruneByCount securityParam
-            $ foldl' apply old{expectedTip = At slot} ops
+            $ foldl' apply old{expectedTip = Value slot} ops
   where
     apply ex op =
         ex
@@ -311,7 +311,7 @@ expectedRollback
     :: (Eq key, Ord slot)
     => Int
     -> Expected slot key value
-    -> WithOrigin slot
+    -> WithSentinel slot
     -> Expected slot key value
 expectedRollback
     k
@@ -320,10 +320,10 @@ expectedRollback
         , expectedOpposites = opposites
         , expectedTip
         }
-    (At slot)
-        | At slot >= expectedTip = old
-        | At slot < expectedTip
-            && At slot >= expectedFinality k old =
+    (Value slot)
+        | Value slot >= expectedTip = old
+        | Value slot < expectedTip
+            && Value slot >= expectedFinality k old =
             let
                 (ops, newOpposites) =
                     break (\(slt, _) -> slt <= slot) opposites
@@ -332,18 +332,18 @@ expectedRollback
             in
                 Expected
                     { expectedAssocs = newAssocs
-                    , expectedTip = At slot
+                    , expectedTip = Value slot
                     , expectedOpposites = newOpposites
                     }
         | otherwise = emptyExpected
-expectedRollback _ _ Origin =
+expectedRollback _ _ Sentinel =
     emptyExpected
 
 -- | Proxy to database 'rollback' that also updates expected state
 rollbackTip
     :: forall m slot key value
      . PropertyConstraints m slot key value
-    => WithOrigin slot
+    => WithSentinel slot
     -> PropertyWithExpected m slot key value ()
 rollbackTip newTip = do
     k <- asksSecurityParam

@@ -10,7 +10,7 @@ in [CDDL](https://www.rfc-editor.org/rfc/rfc8610) (RFC 8610).
 |---------------|-----|-------|
 | `kv` | raw bytes (UTxO reference) | raw bytes (CBOR-encoded TxOut) |
 | `csmt` | [Key](#key) | [Indirect](#indirect) |
-| `rollbacks` | [WithOrigin](#withorigin) | [RollbackPoint](#rollbackpoint) |
+| `rollbacks` | [WithSentinel](#withsentinel) | [RollbackPoint](#rollbackpoint) |
 | `config` | UTF-8 literal `"app_config"` | Serialise-encoded tuple |
 
 ## CDDL
@@ -35,10 +35,10 @@ Indirect = [
 ; Column family: rollbacks
 ; ============================================================
 
-; Rollback point key — Origin or a concrete slot.
-WithOrigin = Origin / AtSlot
-Origin  = 0              ; bare uint, not wrapped in array
-AtSlot  = [1, bstr]      ; tag 1 + slot encoded via slot prism
+; Rollback point key — Sentinel or a concrete slot.
+WithSentinel = Sentinel / ValueSlot
+Sentinel   = 0              ; bare uint, not wrapped in array
+ValueSlot  = [1, bstr]      ; tag 1 + slot encoded via slot prism
 
 ; Rollback point value — captures inverse operations for undo.
 RollbackPoint = [
@@ -69,7 +69,7 @@ PointBlock  = [1, uint, bstr]    ; tag 1 + slot number + block hash
   (identity prism). The values are CBOR-encoded Cardano TxOuts but
   their internal structure is opaque to this application.
 - **Hash**: 32-byte Blake2b-256 digest, stored as raw `bstr`.
-- **Slot prism**: the `bstr` in `WithOrigin.AtSlot` is the slot
+- **Slot prism**: the `bstr` in `WithSentinel.ValueSlot` is the slot
   encoded through the same prism used by the application — in
   practice a CBOR-encoded `Point` (see `Point` definition above).
 - **BREAKING**: this schema replaces the previous cereal-based

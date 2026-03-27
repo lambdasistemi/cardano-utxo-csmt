@@ -6,10 +6,11 @@ where
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
     ( rollbackListPrism
     , rollbackPointPrism
-    , withOriginPrism
+    , withSentinelPrism
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
+    , WithSentinel (..)
     )
 import ChainFollower.Rollbacks.Types qualified as RP
 import Control.Lens
@@ -20,7 +21,6 @@ import Control.Lens
     )
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Ouroboros.Network.Point (WithOrigin (..))
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.QuickCheck
     ( Gen
@@ -82,26 +82,26 @@ genRollbackListPoint = do
             , rpMeta = Just (h, mr)
             }
 
-genWithOrigin :: Gen (WithOrigin ByteString)
-genWithOrigin =
+genWithSentinel :: Gen (WithSentinel ByteString)
+genWithSentinel =
     oneof
-        [ pure Origin
-        , At <$> genBS
+        [ pure Sentinel
+        , Value <$> genBS
         ]
 
 spec :: Spec
 spec = describe "RollbackPoint" $ do
-    describe "withOriginPrism" $ do
-        it "roundtrips Origin" $ do
-            roundtrip (withOriginPrism idPrism) Origin
+    describe "withSentinelPrism" $ do
+        it "roundtrips Sentinel" $ do
+            roundtrip (withSentinelPrism idPrism) Sentinel
 
-        it "roundtrips At slot" $ do
+        it "roundtrips Value slot" $ do
             forAll genBS $ \slot ->
-                roundtrip (withOriginPrism idPrism) (At slot)
+                roundtrip (withSentinelPrism idPrism) (Value slot)
 
-        it "roundtrips arbitrary WithOrigin" $ do
-            forAll genWithOrigin $ \wo ->
-                roundtrip (withOriginPrism idPrism) wo
+        it "roundtrips arbitrary WithSentinel" $ do
+            forAll genWithSentinel $ \wo ->
+                roundtrip (withSentinelPrism idPrism) wo
 
     describe "rollbackPointPrism" $ do
         it "roundtrips a rollback point" $ do

@@ -37,6 +37,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
+    , WithSentinel (..)
     )
 import Cardano.UTxOCSMT.Application.Metrics
     ( MetricsEvent (..)
@@ -259,7 +260,7 @@ follower
                                 $ processBlock
                                     Rollbacks
                                     securityParam
-                                    (At fetchedPoint)
+                                    (Value fetchedPoint)
                                     (fetchedPoint, ops)
                                     phase
                         pure $ go phase'
@@ -273,7 +274,7 @@ follower
                                         Rollbacks
                                         f
                                         n
-                                        (At point)
+                                        (Value point)
                             case result of
                                 Store.RollbackSucceeded _ ->
                                     pure
