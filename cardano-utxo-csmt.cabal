@@ -173,7 +173,6 @@ library library
     Cardano.UTxOCSMT.Application.Metrics
     Cardano.UTxOCSMT.Application.Metrics.Types
     Cardano.UTxOCSMT.Application.Options
-    Cardano.UTxOCSMT.Application.SampleList
     Cardano.UTxOCSMT.Application.UTxOs
     Cardano.UTxOCSMT.Bootstrap.Genesis
     Cardano.UTxOCSMT.Ouroboros.Application
@@ -181,7 +180,6 @@ library library
     Cardano.UTxOCSMT.Ouroboros.Connection
     Cardano.UTxOCSMT.Ouroboros.ConnectionN2C
     Cardano.UTxOCSMT.Ouroboros.Types
-    Data.List.SampleFibonacci
 
   build-depends:
     , aeson
@@ -337,7 +335,6 @@ test-suite unit-tests
     Cardano.UTxOCSMT.Application.OptionsSpec
     Cardano.UTxOCSMT.HTTP.ServerSpec
     Control.Foldl.ExtraSpec
-    Data.List.SampleFibonacciSpec
     Data.Tracer.ThrottleSpec
 
 test-suite cardano-utxo-csmt-integration-test
