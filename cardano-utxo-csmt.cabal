@@ -288,6 +288,8 @@ test-suite unit-tests
     , base
     , base16-bytestring
     , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-api
     , cardano-ledger-babbage
     , cardano-ledger-conway
     , cardano-ledger-core
@@ -332,7 +334,11 @@ test-suite unit-tests
   main-is:            main.hs
   other-modules:
     Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
+    Cardano.UTxOCSMT.Application.Database.InterfaceSpec
+    Cardano.UTxOCSMT.Application.Metrics.TypesSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
+    Cardano.UTxOCSMT.Application.UTxOsSpec
+    Cardano.UTxOCSMT.HTTP.Base16Spec
     Cardano.UTxOCSMT.HTTP.ServerSpec
     Control.Foldl.ExtraSpec
     Data.Tracer.ThrottleSpec
