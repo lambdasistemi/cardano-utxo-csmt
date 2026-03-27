@@ -17,6 +17,10 @@ hlint:
     #!/usr/bin/env bash
     find . -type f -name '*.hs' -not -path '*/dist-newstyle/*' -exec hlint {} +
 
+cabal-check:
+    #!/usr/bin/env bash
+    cabal check --ignore=missing-upper-bounds --ignore=no-modules-exposed --ignore=option-o2
+
 bench:
     #!/usr/bin/env bash
     cabal bench

@@ -1,10 +1,7 @@
 cabal-version:   3.4
 name:            cardano-utxo-csmt
 version:         0.1.0.0
-synopsis:
-  An http service that exposes a Compact Sparse Merkle Tree (CSMT) data structure
-  over the current UTxO set of the Cardano blockchain.
-
+synopsis:        CSMT over Cardano UTxO set with HTTP API
 description:
   This library provides an implementation of a Compact Sparse Merkle Tree (CSMT)
   data structure to efficiently represent and verify the UTxO set of the Cardano
@@ -19,12 +16,19 @@ category:        Development
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
 
+flag werror
+  description: Enable -Werror
+  manual:      True
+  default:     False
+
 common warnings
   ghc-options:
-    -Wall -Werror -Wunused-imports -Wunused-packages
-    -Wmissing-export-lists -Wname-shadowing
-    -Wdeferred-out-of-scope-variables -Wpartial-type-signatures
-    -Wredundant-constraints
+    -Wall -Wunused-imports -Wunused-packages -Wmissing-export-lists
+    -Wname-shadowing -Wdeferred-out-of-scope-variables
+    -Wpartial-type-signatures -Wredundant-constraints
+
+  if flag(werror)
+    ghc-options: -Werror
 
   default-extensions:
     DataKinds
@@ -61,7 +65,7 @@ library
   import:           warnings
   default-language: Haskell2010
   build-depends:
-    , base
+    , base                       <5
     , cardano-utxo-csmt:library
 
 library http
@@ -72,7 +76,7 @@ library http
   build-depends:
     , aeson
     , aeson-pretty
-    , base
+    , base                       <5
     , bytestring
     , cardano-utxo-csmt:library
     , lens
@@ -102,6 +106,7 @@ library application
   -- Work around GHC false positive: rocksdb-kv-transactions is used by Setup.hs
   -- but GHC reports it as unused when compiling earlier modules
   ghc-options:      -Wno-unused-packages
+  autogen-modules:  Paths_cardano_utxo_csmt
   other-modules:    Paths_cardano_utxo_csmt
   exposed-modules:
     Cardano.UTxOCSMT.Application.Run.Application
@@ -114,7 +119,7 @@ library application
 
   build-depends:
     , async
-    , base
+    , base                                     <5
     , bytestring
     , cardano-ledger-babbage
     , cardano-ledger-binary
@@ -147,11 +152,13 @@ library application
 
   hs-source-dirs:   application
   default-language: Haskell2010
+  autogen-modules:  Paths_cardano_utxo_csmt
   other-modules:    Paths_cardano_utxo_csmt
 
 library library
   import:           warnings
   visibility:       public
+  autogen-modules:  Paths_cardano_utxo_csmt
   other-modules:    Paths_cardano_utxo_csmt
   exposed-modules:
     Cardano.UTxOCSMT.Application.BlockFetch
@@ -184,7 +191,7 @@ library library
   build-depends:
     , aeson
     , autodocodec
-    , base
+    , base                                     <5
     , bytestring
     , cardano-crypto-class
     , cardano-crypto-wrapper
@@ -239,6 +246,7 @@ library library
 
   hs-source-dirs:   lib
   default-language: Haskell2010
+  autogen-modules:  Paths_cardano_utxo_csmt
   other-modules:    Paths_cardano_utxo_csmt
 
 executable cardano-utxo-swagger
@@ -246,7 +254,7 @@ executable cardano-utxo-swagger
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
   main-is:          executables/swagger/main.hs
   build-depends:
-    , base
+    , base                    <5
     , bytestring
     , cardano-utxo-csmt:http
 
@@ -257,7 +265,7 @@ executable cardano-utxo
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
   main-is:          executables/chainsync/main.hs
   build-depends:
-    , base
+    , base                           <5
     , cardano-utxo-csmt:application
 
   default-language: Haskell2010
@@ -267,7 +275,7 @@ executable db-query
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N
   main-is:          executables/db-query/main.hs
   build-depends:
-    , base
+    , base                       <5
     , base16-bytestring
     , bytestring
     , cardano-utxo-csmt:library
@@ -285,7 +293,7 @@ test-suite unit-tests
   hs-source-dirs:     test
   build-depends:
     , aeson
-    , base
+    , base                           <5
     , bytestring
     , cardano-crypto-class
     , cardano-ledger-api
@@ -328,7 +336,7 @@ test-suite database-tests
   hs-source-dirs:     database-test
   build-depends:
     , aeson
-    , base
+    , base                                     <5
     , base16-bytestring
     , bytestring
     , cardano-crypto-class
@@ -383,7 +391,7 @@ test-suite cardano-utxo-csmt-integration-test
   hs-source-dirs:     integration-test
   build-depends:
     , async
-    , base
+    , base                         <5
     , bytestring
     , cardano-crypto-class
     , cardano-ledger-allegra
@@ -418,7 +426,7 @@ test-suite e2e-tests
   main-is:          main.hs
   other-modules:    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
   build-depends:
-    , base
+    , base                                     <5
     , bytestring
     , cardano-ledger-byron
     , cardano-node-clients:devnet
@@ -450,7 +458,7 @@ benchmark bench
 
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
   build-depends:
-    , base
+    , base                                     <5
     , bytestring
     , cardano-ledger-babbage
     , cardano-ledger-binary

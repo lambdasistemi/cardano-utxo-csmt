@@ -46,7 +46,10 @@ let
     src = ./..;
     compiler-nix-name = "ghc984";
     shell = shell { inherit pkgs; };
-    modules = [ fix-libs ];
+    modules = [
+      fix-libs
+      ({ lib, ... }: { packages.cardano-utxo-csmt.flags.werror = true; })
+    ];
     inputMap = { "https://chap.intersectmbo.org/" = CHaP; };
   };
 

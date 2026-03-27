@@ -99,6 +99,17 @@ jobs:
             echo "Code formatting is out of date. Please run 'just format' and commit the changes."
             exit 1
           fi
+  cabal-check:
+    name: Cabal check
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Run cabal check
+        run: nix develop --quiet -c just cabal-check
   hlint:
     name: HLint
     runs-on: nixos
