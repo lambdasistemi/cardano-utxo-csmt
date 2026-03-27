@@ -61,6 +61,17 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Tests
         run: nix shell .#unit-tests nixpkgs#zstd nixpkgs#gnutar --quiet -c unit-tests
+  database:
+    name: Run database Tests
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Run Tests
+        run: nix shell .#database-tests nixpkgs#zstd nixpkgs#gnutar --quiet -c database-tests
   bench:
     name: Run Benchmarks
     runs-on: nixos

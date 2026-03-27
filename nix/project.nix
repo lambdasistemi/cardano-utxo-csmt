@@ -58,6 +58,8 @@ in {
   packages.bench = project.hsPkgs.cardano-utxo-csmt.components.benchmarks.bench;
   packages.unit-tests =
     project.hsPkgs.cardano-utxo-csmt.components.tests.unit-tests;
+  packages.database-tests =
+    project.hsPkgs.cardano-utxo-csmt.components.tests.database-tests;
   packages.cardano-utxo =
     project.hsPkgs.cardano-utxo-csmt.components.exes.cardano-utxo;
   packages.cardano-utxo-swagger =

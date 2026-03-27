@@ -35,6 +35,21 @@ unit match="" *args='' :
           --test-options="{{ args }}"
     fi
 
+database match="" *args='' :
+    #!/usr/bin/env bash
+    # shellcheck disable=SC2050
+    if [[ '{{ match }}' == "" ]]; then
+      cabal test database-tests \
+          --test-show-details=direct \
+          --test-options="{{args}}"
+    else
+      cabal test database-tests \
+          --test-show-details=direct \
+          --test-option=--match \
+          --test-option="{{ match }}" \
+          --test-options="{{ args }}"
+    fi
+
 build:
     #!/usr/bin/env bash
     cabal build all --enable-tests --enable-benchmarks
