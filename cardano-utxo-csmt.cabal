@@ -294,6 +294,7 @@ test-suite unit-tests
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-slotting
+    , cardano-utxo-csmt:application
     , cardano-utxo-csmt:http
     , cardano-utxo-csmt:library
     , cborg
@@ -334,6 +335,7 @@ test-suite unit-tests
   main-is:            main.hs
   other-modules:
     Cardano.UTxOCSMT.Application.Database.E2ERunnerSpec
+    Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPointSpec
     Cardano.UTxOCSMT.Application.Database.InterfaceSpec
     Cardano.UTxOCSMT.Application.Metrics.TypesSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
