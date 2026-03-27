@@ -9,8 +9,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build gate — populates the shared nix store so downstream jobs are fast
+  # ---------------------------------------------------------------------------
+  build-gate:
+    name: Build Gate
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build all derivations
+        run: >-
+          nix build --quiet
+          .#cardano-utxo
+          .#unit-tests
+          .#database-tests
+          .#bench
+          .#e2e-tests
+          .#docker-image
+          .#devShells.x86_64-linux.default.inputDerivation
+
+  # ---------------------------------------------------------------------------
+  # Artifacts (needs build-gate for cached derivations)
+  # ---------------------------------------------------------------------------
   build:
     name: Build
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +77,13 @@ jobs:
         with:
           name: cardano-utxo-deb
           path: cardano-utxo.deb
+
+  # ---------------------------------------------------------------------------
+  # Tests & checks (all need build-gate)
+  # ---------------------------------------------------------------------------
   unit:
     name: Run unit Tests
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +95,7 @@ jobs:
         run: nix shell .#unit-tests nixpkgs#zstd nixpkgs#gnutar --quiet -c unit-tests
   database:
     name: Run database Tests
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +107,7 @@ jobs:
         run: nix shell .#database-tests nixpkgs#zstd nixpkgs#gnutar --quiet -c database-tests
   bench:
     name: Run Benchmarks
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +119,7 @@ jobs:
         run: nix run .#bench --quiet
   formatting:
     name: Check code formatting
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -101,6 +136,7 @@ jobs:
           fi
   cabal-check:
     name: Cabal check
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -112,6 +148,7 @@ jobs:
         run: nix develop --quiet -c just cabal-check
   hlint:
     name: HLint
+    needs: build-gate
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +158,28 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run HLint
         run: nix develop --quiet -c just hlint
+  swagger:
+    # check that the swagger file is up to date
+    name: Check Swagger documentation
+    needs: build-gate
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Check Swagger
+        run: |
+          nix develop --quiet -c just update-swagger
+          if ! git diff --exit-code --quiet docs/assets/swagger.json; then
+            echo "Swagger documentation is out of date. Please run 'just update-swagger' and commit the changes."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # E2E tests (need build for docker image artifact)
+  # ---------------------------------------------------------------------------
   e2e:
     name: N2C E2E test
     needs: build
@@ -183,20 +242,3 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose -p e2e-n2n -f e2e/docker-compose.n2n.yml down -v
-  swagger:
-    # check that the swagger file is up to date
-    name: Check Swagger documentation
-    runs-on: nixos
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/cachix-action@v15
-        with:
-          name: paolino
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Check Swagger
-        run: |
-          nix develop --quiet -c just update-swagger
-          if ! git diff --exit-code --quiet docs/assets/swagger.json; then
-            echo "Swagger documentation is out of date. Please run 'just update-swagger' and commit the changes."
-            exit 1
-          fi
