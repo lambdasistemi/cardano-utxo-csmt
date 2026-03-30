@@ -485,7 +485,7 @@ session
     -> IO ReadyResponse
     -> Session b
     -> IO b
-session a b c d e = flip runSession $ apiApp a b c d e
+session a b c d e = flip runSession $ apiApp a b c d e (\_ _ _ -> pure Nothing)
 
 spec :: Spec
 spec = do

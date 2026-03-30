@@ -3,6 +3,8 @@ module Cardano.UTxOCSMT.Application.Run.Query
     , queryInclusionProof
     , queryUTxOsByAddress
     , mkReadyResponse
+    , queryAwaitValue
+    , queryAwait
     )
 where
 
@@ -46,7 +48,8 @@ import Cardano.UTxOCSMT.Application.Run.Config
     )
 import Cardano.UTxOCSMT.Application.UTxOs (unsafeMkTxIn)
 import Cardano.UTxOCSMT.HTTP.API
-    ( InclusionProofResponse (..)
+    ( AwaitResponse (..)
+    , InclusionProofResponse (..)
     , MerkleRootEntry (..)
     , ReadyResponse (..)
     , UTxOByAddressEntry (..)
@@ -57,6 +60,14 @@ import Cardano.UTxOCSMT.HTTP.Base16
     , unsafeDecodeBase16Text
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Header, Point)
+import Control.Concurrent.STM
+    ( TVar
+    , atomically
+    , readTVar
+    , readTVarIO
+    , retry
+    )
+import Control.Monad (when)
 import Data.ByteArray.Encoding
     ( Base (..)
     , convertToBase
@@ -67,10 +78,12 @@ import Data.ByteString.Short (toShort)
 import Data.Text (Text)
 import Data.Text.Encoding qualified as Text
 import Data.Word (Word16, Word64)
+import Database.KV.Transaction (query)
 import Database.RocksDB (BatchOp, ColumnFamily)
 import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Block qualified as Network
 import Ouroboros.Network.Point (Block (..), WithOrigin (..))
+import System.Timeout (timeout)
 
 {- | Query all merkle roots from the database.
 
@@ -229,3 +242,64 @@ mkReadyResponse threshold mMetrics =
     getProcessedSlot Nothing = Nothing
     getProcessedSlot (Just (_, header)) =
         Just $ unSlotNo $ Network.blockSlot header
+
+{- | Block until a key appears in the store or timeout expires.
+
+Uses a TVar counter that is incremented after each commit.
+The STM runtime wakes blocked threads when the counter changes,
+at which point we re-check the store for the key.
+-}
+queryAwaitValue
+    :: TVar Int
+    -- ^ Commit notification counter
+    -> (key -> IO (Maybe value))
+    -- ^ getValue function
+    -> key
+    -- ^ Key to wait for
+    -> Maybe Int
+    -- ^ Timeout in seconds (Nothing = 30s default)
+    -> IO (Maybe value)
+queryAwaitValue notifyTVar getValue' key mTimeout = do
+    let timeoutMicros = maybe 30_000_000 (* 1_000_000) mTimeout
+    timeout timeoutMicros $ do
+        let go lastSeen = do
+                mval <- getValue' key
+                case mval of
+                    Just v -> pure v
+                    Nothing -> do
+                        atomically $ do
+                            current <- readTVar notifyTVar
+                            when (current == lastSeen) retry
+                        go =<< readTVarIO notifyTVar
+        go =<< readTVarIO notifyTVar
+
+{- | HTTP await handler: block until a UTxO appears, returning
+an AwaitResponse with the base16-encoded TxOut.
+-}
+queryAwait
+    :: TVar Int
+    -> RunTransaction
+        ColumnFamily
+        BatchOp
+        Point
+        Hash
+        LazyByteString
+        LazyByteString
+        IO
+    -> Text
+    -> Word16
+    -> Maybe Int
+    -> IO (Maybe AwaitResponse)
+queryAwait notifyTVar (RunTransaction runTx) txIdText txIx mTimeout = do
+    let txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx
+        getValue' k = runTx $ query KVCol k
+    mval <- queryAwaitValue notifyTVar getValue' txIn mTimeout
+    pure
+        $ fmap
+            ( \out ->
+                AwaitResponse
+                    txIdText
+                    txIx
+                    (encodeBase16Text $ toStrict out)
+            )
+            mval

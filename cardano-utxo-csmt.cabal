@@ -44,6 +44,7 @@ common warnings
     LambdaCase
     MultiParamTypeClasses
     NamedFieldPuns
+    NumericUnderscores
     OverloadedStrings
     PatternSynonyms
     RankNTypes
@@ -145,6 +146,7 @@ library application
     , ouroboros-network-api
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions
+    , stm
     , strict-stm
     , text
     , time
@@ -293,6 +295,7 @@ test-suite unit-tests
   hs-source-dirs:     test
   build-depends:
     , aeson
+    , async
     , base                           <5
     , bytestring
     , cardano-crypto-class
@@ -312,6 +315,7 @@ test-suite unit-tests
     , opt-env-conf
     , ouroboros-network-api
     , QuickCheck
+    , stm
     , text
     , time
     , yaml
@@ -324,6 +328,7 @@ test-suite unit-tests
     Cardano.UTxOCSMT.Application.Database.InterfaceSpec
     Cardano.UTxOCSMT.Application.Metrics.TypesSpec
     Cardano.UTxOCSMT.Application.OptionsSpec
+    Cardano.UTxOCSMT.Application.Run.QuerySpec
     Cardano.UTxOCSMT.Application.UTxOsSpec
     Cardano.UTxOCSMT.HTTP.Base16Spec
     Control.Foldl.ExtraSpec
@@ -442,6 +447,7 @@ test-suite e2e-tests
     , process
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions
+    , stm
     , temporary
     , time
     , unix

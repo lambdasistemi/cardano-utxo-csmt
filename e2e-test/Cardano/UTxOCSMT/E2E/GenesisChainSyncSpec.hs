@@ -48,6 +48,7 @@ import Cardano.UTxOCSMT.Application.Run.Setup
 import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as CFStore
 import ChainFollower.Runner (Phase (..))
+import Control.Concurrent.STM (newTVarIO)
 import Control.Lens (iso)
 import Control.Tracer (nullTracer)
 import Data.ByteString.Lazy qualified as BL
@@ -154,6 +155,7 @@ spec = describe "Genesis chain sync" $ do
                                             InFollowing
                                                 initialCount
                                                 following
+                                    notifyTVar <- newTVarIO (0 :: Int)
                                     result <-
                                         timeout
                                             15_000_000
@@ -171,6 +173,7 @@ spec = describe "Genesis chain sync" $ do
                                                 backendInit
                                                 armageddonParams
                                                 maxBound
+                                                notifyTVar
                                                 initialPhase
                                                 [setupStartingPoint]
                                     result

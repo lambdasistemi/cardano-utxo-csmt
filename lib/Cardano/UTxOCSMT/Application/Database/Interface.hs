@@ -95,6 +95,10 @@ data Query m slot key value = Query
     -- ^ Get the finality slot (immutable point)
     , getByAddress :: ByteString -> m [(key, value)]
     -- ^ Get all UTxOs at a given address (raw address bytes)
+    , awaitValue :: key -> Maybe Int -> m (Maybe value)
+    {- ^ Block until a key appears or timeout (seconds) expires.
+    Uses STM retry on a commit notification TVar.
+    -}
     }
 
 -- | Let a transaction runner apply to all queries
@@ -102,12 +106,13 @@ hoistQuery
     :: (forall a. m a -> n a)
     -> Query m slot key value
     -> Query n slot key value
-hoistQuery nat Query{getValue, getTip, getFinality, getByAddress} =
+hoistQuery nat Query{getValue, getTip, getFinality, getByAddress, awaitValue} =
     Query
         { getValue = nat . getValue
         , getTip = nat getTip
         , getFinality = nat getFinality
         , getByAddress = nat . getByAddress
+        , awaitValue = \k t -> nat (awaitValue k t)
         }
 
 {- | Get the inverse of an operation, needs access to the database to retrieve
