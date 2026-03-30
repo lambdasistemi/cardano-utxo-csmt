@@ -1,5 +1,27 @@
 {
     "definitions": {
+        "AwaitResponse": {
+            "description": "Response after awaiting a UTxO to appear in the CSMT",
+            "properties": {
+                "txId": {
+                    "type": "string"
+                },
+                "txIx": {
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                },
+                "txOut": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "txId",
+                "txIx",
+                "txOut"
+            ],
+            "type": "object"
+        },
         "InclusionProofResponse": {
             "description": "Current inclusion proof and output for the given transaction input.",
             "properties": {
@@ -261,6 +283,48 @@
         "version": "0.1.0.0"
     },
     "paths": {
+        "/await/{txId}/{txIx}": {
+            "get": {
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "txId",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "path",
+                        "maximum": 65535,
+                        "minimum": 0,
+                        "name": "txIx",
+                        "required": true,
+                        "type": "integer"
+                    },
+                    {
+                        "in": "query",
+                        "maximum": 9223372036854775807,
+                        "minimum": -9223372036854775808,
+                        "name": "timeout",
+                        "required": false,
+                        "type": "integer"
+                    }
+                ],
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/AwaitResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid `timeout` or `txIx` or `txId`"
+                    }
+                }
+            }
+        },
         "/merkle-roots": {
             "get": {
                 "produces": [

@@ -59,6 +59,7 @@ import Cardano.UTxOCSMT.Ouroboros.Types
 import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as Store
 import ChainFollower.Runner (Phase (..))
+import Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import Control.Exception (throwIO)
 import Control.Monad (replicateM_)
 import Control.Tracer (Tracer (..))
@@ -166,6 +167,8 @@ intersector
     -> ArmageddonParams Hash
     -> Int
     -- ^ Security parameter (stability window)
+    -> TVar Int
+    -- ^ Commit notification counter
     -> AppPhase
     -> Intersector Point SlotNo Fetched
 intersector
@@ -175,6 +178,7 @@ intersector
     backendInit
     armageddonParams
     securityParam
+    notifyTVar
     phase =
         Intersector
             { intersectFound = \point -> do
@@ -187,6 +191,7 @@ intersector
                         backendInit
                         armageddonParams
                         securityParam
+                        notifyTVar
                         phase
             , intersectNotFound = do
                 trace ApplicationIntersectionFailed
@@ -198,6 +203,7 @@ intersector
                         backendInit
                         armageddonParams
                         securityParam
+                        notifyTVar
                         phase
                     , [origin]
                     )
@@ -225,6 +231,8 @@ follower
     -> ArmageddonParams Hash
     -> Int
     -- ^ Security parameter (stability window)
+    -> TVar Int
+    -- ^ Commit notification counter
     -> AppPhase
     -> Follower Point SlotNo Fetched
 follower
@@ -233,7 +241,8 @@ follower
     runner@RunTransaction{transact}
     backendInit
     armageddonParams
-    securityParam =
+    securityParam
+    notifyTVar =
         go
       where
         go phase =
@@ -263,6 +272,7 @@ follower
                                     (Value fetchedPoint)
                                     (fetchedPoint, ops)
                                     phase
+                        atomically $ modifyTVar' notifyTVar (+ 1)
                         pure $ go phase'
                 , rollBackward = \point -> do
                     trace $ ApplicationRollingBack point
@@ -307,6 +317,7 @@ follower
                                                 backendInit
                                                 armageddonParams
                                                 securityParam
+                                                notifyTVar
                                                 ( InRestoration
                                                     0
                                                     restoring
@@ -346,6 +357,8 @@ application
     -> ArmageddonParams Hash
     -> Int
     -- ^ Security parameter (stability window)
+    -> TVar Int
+    -- ^ Commit notification counter
     -> AppPhase
     -> [Point]
     -> IO Void
@@ -363,6 +376,7 @@ application
     backendInit
     armageddonParams
     securityParam
+    notifyTVar
     initialPhase
     availablePoints =
         do
@@ -387,6 +401,7 @@ application
                         backendInit
                         armageddonParams
                         securityParam
+                        notifyTVar
                         initialPhase
             let chainFollowingApplication =
                     mkChainSyncApplication
@@ -442,6 +457,8 @@ applicationN2C
     -> ArmageddonParams Hash
     -> Int
     -- ^ Security parameter (stability window)
+    -> TVar Int
+    -- ^ Commit notification counter
     -> AppPhase
     -> [Point]
     -> IO Void
@@ -457,6 +474,7 @@ applicationN2C
     backendInit
     armageddonParams
     securityParam
+    notifyTVar
     initialPhase
     availablePoints =
         do
@@ -473,6 +491,7 @@ applicationN2C
                         backendInit
                         armageddonParams
                         securityParam
+                        notifyTVar
                         initialPhase
                 points =
                     if null availablePoints

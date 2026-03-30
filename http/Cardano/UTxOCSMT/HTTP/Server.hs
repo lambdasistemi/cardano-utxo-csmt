@@ -12,6 +12,7 @@ import Cardano.UTxOCSMT.Application.Metrics
     )
 import Cardano.UTxOCSMT.HTTP.API
     ( API
+    , AwaitResponse
     , InclusionProofResponse
     , MerkleRootEntry
     , ReadyResponse (..)
@@ -34,6 +35,7 @@ import Network.Wai.Middleware.Cors (simpleCors)
 import Servant
     ( Handler
     , Server
+    , ServerError (..)
     , err400
     , err404
     , err503
@@ -50,14 +52,16 @@ apiServer
     -> (Text -> Word16 -> IO (Maybe InclusionProofResponse))
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
+    -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
     -> Server API
-apiServer getMetrics getMerkleRoots getProof getByAddress getReady =
+apiServer getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
     prometheusHandler
         :<|> metricsHandler
         :<|> merkleRootsHandler
         :<|> proofHandler
         :<|> byAddressHandler
         :<|> readyHandler
+        :<|> awaitHandler
   where
     metricsHandler = do
         r <- liftIO getMetrics
@@ -93,6 +97,23 @@ apiServer getMetrics getMerkleRoots getProof getByAddress getReady =
 
     readyHandler = liftIO getReady
 
+    awaitHandler txId txIx mTimeout = do
+        r <- liftIO $ getAwait txId txIx mTimeout
+        maybe
+            (throwError err408)
+            pure
+            r
+
+-- | HTTP 408 Request Timeout
+err408 :: ServerError
+err408 =
+    ServerError
+        { errHTTPCode = 408
+        , errReasonPhrase = "Request Timeout"
+        , errBody = "Timeout waiting for UTxO to appear"
+        , errHeaders = []
+        }
+
 -- | WAI Application for the API
 apiApp
     :: IO (Maybe Metrics)
@@ -100,11 +121,18 @@ apiApp
     -> (Text -> Word16 -> IO (Maybe InclusionProofResponse))
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
+    -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
     -> Application
-apiApp getMetrics getMerkleRoots getProof getByAddress getReady =
+apiApp getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
     simpleCors
         $ serve api
-        $ apiServer getMetrics getMerkleRoots getProof getByAddress getReady
+        $ apiServer
+            getMetrics
+            getMerkleRoots
+            getProof
+            getByAddress
+            getReady
+            getAwait
 
 {- | Run the API server on the specified port
 Takes a port number, an IO action that provides the current Metrics,
@@ -119,10 +147,17 @@ runAPIServer
     -> (Text -> Word16 -> IO (Maybe InclusionProofResponse))
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
+    -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
     -> IO ()
-runAPIServer port getMetrics getMerkleRoots getProof getByAddress getReady =
+runAPIServer port getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
     run (fromIntegral port)
-        $ apiApp getMetrics getMerkleRoots getProof getByAddress getReady
+        $ apiApp
+            getMetrics
+            getMerkleRoots
+            getProof
+            getByAddress
+            getReady
+            getAwait
 
 -- | WAI Application for the documentation
 docsApp :: Maybe PortNumber -> Application

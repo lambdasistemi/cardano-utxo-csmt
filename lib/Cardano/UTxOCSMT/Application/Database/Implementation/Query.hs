@@ -96,6 +96,7 @@ mkQuery isoK =
                         $ addressBytes
             indirects <- collectValues CSMTCol [] addressKey
             catMaybes <$> traverse lookupKV indirects
+        , awaitValue = \k _timeout -> query KVCol k
         }
   where
     lookupKV indirect = do

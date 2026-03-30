@@ -50,6 +50,7 @@ import Cardano.UTxOCSMT.Application.Run.Config
     )
 import Cardano.UTxOCSMT.Application.Run.Query
     ( mkReadyResponse
+    , queryAwait
     , queryInclusionProof
     , queryMerkleRoots
     , queryUTxOsByAddress
@@ -69,6 +70,7 @@ import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as CFStore
 import ChainFollower.Runner (Phase (..))
 import Control.Concurrent.Async (async, link)
+import Control.Concurrent.STM (newTVarIO)
 import Control.Exception (SomeException, catch, displayException)
 import Control.Lens (iso)
 import Control.Monad ((<=<))
@@ -133,6 +135,9 @@ main = withUtf8 $ do
 
         -- IORef for sharing metrics with HTTP (via shareTracer pattern)
         metricsRef <- newIORef Nothing
+
+        -- Commit notification TVar for awaitValue
+        commitNotify <- newTVarIO (0 :: Int)
 
         -- Break the circular dependency:
         -- metricsEvent needs mainTracer (to inject MetricsReport)
@@ -224,6 +229,7 @@ main = withUtf8 $ do
                         (queryInclusionProof runner)
                         (queryUTxOsByAddress runner)
                         getReadyResponse
+                        (queryAwait commitNotify runner)
 
             SetupResult
                 { setupStartingPoint
@@ -297,6 +303,7 @@ main = withUtf8 $ do
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)
+                            commitNotify
                             initialPhase
                             availablePoints
                     N2C{n2cSocket} ->
@@ -312,6 +319,7 @@ main = withUtf8 $ do
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)
+                            commitNotify
                             initialPhase
                             availablePoints
                 )

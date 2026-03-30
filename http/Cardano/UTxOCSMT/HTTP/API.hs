@@ -22,6 +22,7 @@ module Cardano.UTxOCSMT.HTTP.API
     , InclusionProofResponse (..)
     , UTxOByAddressEntry (..)
     , ReadyResponse (..)
+    , AwaitResponse (..)
     )
 where
 
@@ -51,6 +52,7 @@ import Servant
     , Get
     , JSON
     , PlainText
+    , QueryParam
     , type (:<|>)
     , type (:>)
     )
@@ -81,6 +83,11 @@ type API =
             :> Get '[JSON] [UTxOByAddressEntry]
         :<|> "ready"
             :> Get '[JSON] ReadyResponse
+        :<|> "await"
+            :> Capture "txId" Text
+            :> Capture "txIx" Word16
+            :> QueryParam "timeout" Int
+            :> Get '[JSON] AwaitResponse
 
 -- | Proxy for the API
 api :: Proxy API
@@ -276,3 +283,47 @@ instance ToSchema ReadyResponse where
             & required .~ ["ready", "tipSlot", "processedSlot", "slotsBehind"]
             & description
                 ?~ "Sync readiness status for orchestration"
+
+-- | Response for the /await endpoint
+data AwaitResponse = AwaitResponse
+    { awaitTxId :: Text
+    -- ^ Transaction ID that was awaited
+    , awaitTxIx :: Word16
+    -- ^ Transaction index
+    , awaitTxOut :: Text
+    -- ^ CBOR-encoded TxOut in base16
+    }
+    deriving (Show, Eq)
+
+instance ToJSON AwaitResponse where
+    toJSON AwaitResponse{awaitTxId, awaitTxIx, awaitTxOut} =
+        object
+            [ "txId" .= awaitTxId
+            , "txIx" .= awaitTxIx
+            , "txOut" .= awaitTxOut
+            ]
+
+instance FromJSON AwaitResponse where
+    parseJSON = withObject "AwaitResponse" $ \v ->
+        AwaitResponse
+            <$> v .: "txId"
+            <*> v .: "txIx"
+            <*> v .: "txOut"
+
+instance ToSchema AwaitResponse where
+    declareNamedSchema _ = do
+        stringSchema <- declareSchemaRef (Proxy @String)
+        word16Schema <- declareSchemaRef (Proxy @Word16)
+        return
+            $ Swagger.NamedSchema (Just "AwaitResponse")
+            $ mempty
+            & Swagger.type_ ?~ Swagger.SwaggerObject
+            & properties
+                .~ fromList
+                    [ ("txId", stringSchema)
+                    , ("txIx", word16Schema)
+                    , ("txOut", stringSchema)
+                    ]
+            & required .~ ["txId", "txIx", "txOut"]
+            & description
+                ?~ "Response after awaiting a UTxO to appear in the CSMT"

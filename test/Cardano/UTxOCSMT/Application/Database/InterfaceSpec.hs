@@ -51,6 +51,7 @@ spec = describe "Database.Interface" $ do
                             , getTip = Identity Sentinel
                             , getFinality = Identity Sentinel
                             , getByAddress = \_ -> Identity []
+                            , awaitValue = \_ _ -> Identity Nothing
                             }
                     q' = hoistQuery id q
                 in  runIdentity (getValue q' ()) `shouldBe` Just bs
@@ -62,6 +63,7 @@ spec = describe "Database.Interface" $ do
                         , getTip = Identity (Value (42 :: Int))
                         , getFinality = Identity Sentinel
                         , getByAddress = \_ -> Identity []
+                        , awaitValue = \_ _ -> Identity Nothing
                         }
                 q' = hoistQuery id q
             runIdentity (getTip q') `shouldBe` Value 42

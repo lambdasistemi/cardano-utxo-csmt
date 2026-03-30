@@ -51,6 +51,11 @@ Everything builds via `flake.nix`. CI and local development use the exact same n
 - `just ci` locally before pushing.
 - Format with `fourmolu`, lint with `hlint`, check with `cabal check`.
 
+## Documentation Standards
+
+- Diagrams in markdown MUST use Mermaid syntax (rendered by MkDocs mermaid2 plugin and GitHub).
+- No ASCII art diagrams — always use Mermaid flowcharts, sequence diagrams, or class diagrams.
+
 ## Governance
 
 Constitution reflects the project's established practices. Amendments are committed alongside the changes that motivate them.
