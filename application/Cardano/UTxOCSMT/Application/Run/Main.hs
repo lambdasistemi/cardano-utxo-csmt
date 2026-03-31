@@ -266,13 +266,20 @@ main = withUtf8 $ do
                     | null history
                     ]
 
-            -- Create checkpoint action
+            -- Create checkpoint actions
             let setCheckpoint point =
                     transact runner
                         $ putBaseCheckpoint
                             decodePoint
                             encodePoint
                             point
+                -- Transaction-level checkpoint for atomic
+                -- block processing
+                txCheckpoint point =
+                    putBaseCheckpoint
+                        decodePoint
+                        encodePoint
+                        point
 
             -- Log before starting the application
             trace ApplicationStarting
@@ -295,6 +302,7 @@ main = withUtf8 $ do
                             metricsEvent
                             (contra Application)
                             runner
+                            txCheckpoint
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)
@@ -311,6 +319,7 @@ main = withUtf8 $ do
                             metricsEvent
                             (contra Application)
                             runner
+                            txCheckpoint
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)
