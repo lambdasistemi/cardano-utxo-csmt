@@ -156,8 +156,6 @@ intersector
         ByteString
         ByteString
         IO
-    -> (Point -> AppTx ())
-    -- ^ Checkpoint action (runs inside transaction)
     -> Backend.Init
         IO
         AppTx
@@ -177,7 +175,6 @@ intersector
     TraceWith{trace, tracer}
     trUTxO
     runner
-    checkpoint
     backendInit
     armageddonParams
     securityParam
@@ -191,7 +188,6 @@ intersector
                         tracer
                         trUTxO
                         runner
-                        checkpoint
                         backendInit
                         armageddonParams
                         securityParam
@@ -204,7 +200,6 @@ intersector
                         tracer
                         trUTxO
                         runner
-                        checkpoint
                         backendInit
                         armageddonParams
                         securityParam
@@ -225,7 +220,6 @@ follower
         ByteString
         ByteString
         IO
-    -> (Point -> AppTx ())
     -- ^ Checkpoint action (runs inside transaction)
     -> Backend.Init
         IO
@@ -246,7 +240,6 @@ follower
     TraceWith{trace, tracer}
     trUTxO
     runner@RunTransaction{transact}
-    checkpoint
     backendInit
     armageddonParams
     securityParam
@@ -265,8 +258,9 @@ follower
                             blockSlot = case Network.pointSlot fetchedPoint of
                                 At (SlotNo s) -> s
                                 _ -> 0
-                            atTip = blockSlot + fromIntegral securityParam
-                                >= unSlotNo tipSlot
+                            atTip =
+                                blockSlot + fromIntegral securityParam
+                                    >= unSlotNo tipSlot
                         replicateM_ opsCount trUTxO
                         case Network.pointSlot fetchedPoint of
                             At slot
@@ -281,7 +275,6 @@ follower
                             processBlock
                                 atTip
                                 transact
-                                (checkpoint fetchedPoint)
                                 Rollbacks
                                 securityParam
                                 (Value fetchedPoint)
@@ -329,7 +322,6 @@ follower
                                                 tracer
                                                 trUTxO
                                                 runner
-                                                checkpoint
                                                 backendInit
                                                 armageddonParams
                                                 securityParam
@@ -361,8 +353,6 @@ application
         ByteString
         ByteString
         IO
-    -> (Point -> AppTx ())
-    -- ^ Transaction-level checkpoint
     -> Backend.Init
         IO
         AppTx
@@ -390,7 +380,6 @@ application
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     runner
-    txCheckpoint
     backendInit
     armageddonParams
     securityParam
@@ -416,7 +405,6 @@ application
                         tracer
                         counting
                         runner
-                        txCheckpoint
                         backendInit
                         armageddonParams
                         securityParam
@@ -465,8 +453,6 @@ applicationN2C
         ByteString
         ByteString
         IO
-    -> (Point -> AppTx ())
-    -- ^ Transaction-level checkpoint
     -> Backend.Init
         IO
         AppTx
@@ -492,7 +478,6 @@ applicationN2C
     TraceWith{trace = metricTrace, contra = metricContra}
     TraceWith{tracer}
     runner
-    txCheckpoint
     backendInit
     armageddonParams
     securityParam
@@ -510,7 +495,6 @@ applicationN2C
                         tracer
                         counting
                         runner
-                        txCheckpoint
                         backendInit
                         armageddonParams
                         securityParam

@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 {- | End-to-end tests for the Runner-based chain follower.
 
 These tests exercise the new path: 'createBackend' → 'Backend.Init'
@@ -360,7 +362,7 @@ withFreshDBRestoration action =
                         mkCSMTOps testFromKV testHashing
                 -- No sentinel — fresh DB, restoration mode
                 let phase =
-                        InRestoration 0 (mkRestoring csmtOps)
+                        InRestoration (mkRestoring csmtOps)
                 action phase transact
 
 spec :: Spec
@@ -368,13 +370,14 @@ spec = describe "E2E Runner" $ do
     it "initializes and processes a block" $ do
         withFreshDB $ \phase transact -> do
             _ <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 1))
-                        (SlotNo 1, [])
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 1))
+                    (SlotNo 1, [])
+                    phase
             pure ()
 
     it "forward/rollback cycle" $ do
@@ -383,28 +386,30 @@ spec = describe "E2E Runner" $ do
                 val1 = mkTestValue "output1"
             -- Forward slot 1
             phase1 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 1))
-                        ( SlotNo 1
-                        , [Insert key1 val1]
-                        )
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 1))
+                    ( SlotNo 1
+                    , [Insert key1 val1]
+                    )
+                    phase
             -- Forward slot 2
             let key2 = mkTestKey "utxo2"
                 val2 = mkTestValue "output2"
             phase2 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 2))
-                        ( SlotNo 2
-                        , [Insert key2 val2]
-                        )
-                        phase1
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 2))
+                    ( SlotNo 2
+                    , [Insert key2 val2]
+                    )
+                    phase1
             -- Rollback to slot 1
             case phase2 of
                 InFollowing n f -> do
@@ -420,7 +425,7 @@ spec = describe "E2E Runner" $ do
                             deleted `shouldBe` 1
                         Store.RollbackImpossible ->
                             fail "unexpected RollbackImpossible"
-                InRestoration _ _ ->
+                InRestoration _ ->
                     fail "expected Following"
 
     it "multiple forwards with inserts and deletes"
@@ -432,49 +437,53 @@ spec = describe "E2E Runner" $ do
                     val2 = mkTestValue "output2"
                 -- Slot 1: insert two
                 phase1 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            ( SlotNo 1
-                            , [Insert key1 val1, Insert key2 val2]
-                            )
-                            phase
+                    processBlock
+                        True
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        ( SlotNo 1
+                        , [Insert key1 val1, Insert key2 val2]
+                        )
+                        phase
                 -- Slot 2: delete one, insert another
                 let key3 = mkTestKey "utxo3"
                     val3 = mkTestValue "output3"
                 phase2 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 2))
-                            ( SlotNo 2
-                            , [Delete key1, Insert key3 val3]
-                            )
-                            phase1
+                    processBlock
+                        True
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 2))
+                        ( SlotNo 2
+                        , [Delete key1, Insert key3 val3]
+                        )
+                        phase1
                 -- Slot 3: empty block
                 _ <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 3))
-                            (SlotNo 3, [])
-                            phase2
+                    processBlock
+                        True
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 3))
+                        (SlotNo 3, [])
+                        phase2
                 pure ()
 
     it "rollback to Sentinel" $ do
         withFreshDB $ \phase transact -> do
             phase1 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 1))
-                        (SlotNo 1, [])
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 1))
+                    (SlotNo 1, [])
+                    phase
             case phase1 of
                 InFollowing n f -> do
                     (result, _) <-
@@ -489,7 +498,7 @@ spec = describe "E2E Runner" $ do
                             pure ()
                         Store.RollbackImpossible ->
                             fail "unexpected RollbackImpossible"
-                InRestoration _ _ ->
+                InRestoration _ ->
                     fail "expected Following"
 
     it "queryHistory returns metadata" $ do
@@ -498,15 +507,16 @@ spec = describe "E2E Runner" $ do
                 val1 = mkTestValue "output1"
             -- Follow one block
             _ <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 1))
-                        ( SlotNo 1
-                        , [Insert key1 val1]
-                        )
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 1))
+                    ( SlotNo 1
+                    , [Insert key1 val1]
+                    )
+                    phase
             -- Query history
             history <-
                 transact
@@ -519,29 +529,32 @@ spec = describe "E2E Runner" $ do
             -- Follow 3 blocks with k=1 (keep 2 points)
             -- Auto-pruning kicks in when count > k+1
             phase1 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        1
-                        (Value (SlotNo 1))
-                        (SlotNo 1, [])
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    1
+                    (Value (SlotNo 1))
+                    (SlotNo 1, [])
+                    phase
             phase2 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        1
-                        (Value (SlotNo 2))
-                        (SlotNo 2, [])
-                        phase1
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    1
+                    (Value (SlotNo 2))
+                    (SlotNo 2, [])
+                    phase1
             _ <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        1
-                        (Value (SlotNo 3))
-                        (SlotNo 3, [])
-                        phase2
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    1
+                    (Value (SlotNo 3))
+                    (SlotNo 3, [])
+                    phase2
             -- With k=1, only slot 2 and 3 remain
             history <-
                 transact
@@ -587,45 +600,48 @@ spec = describe "E2E Runner" $ do
         withFreshDB $ \phase transact -> do
             -- Bootstrap: insert what block 282639 needs
             phase1 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 1))
-                        ( SlotNo 1
-                        , [Insert key366b_0 "out-366b-0"]
-                        )
-                        phase
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 1))
+                    ( SlotNo 1
+                    , [Insert key366b_0 "out-366b-0"]
+                    )
+                    phase
             -- Block 282639: 1 delete + 2 inserts
             phase2 <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 12903843))
-                        ( SlotNo 12903843
-                        ,
-                            [ Delete key366b_0
-                            , Insert keyd4be_0 "out-d4be-0"
-                            , Insert keyd4be_1 "out-d4be-1"
-                            ]
-                        )
-                        phase1
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 12903843))
+                    ( SlotNo 12903843
+                    ,
+                        [ Delete key366b_0
+                        , Insert keyd4be_0 "out-d4be-0"
+                        , Insert keyd4be_1 "out-d4be-1"
+                        ]
+                    )
+                    phase1
             -- Block 283086: delete d4be#1
             _ <-
-                transact
-                    $ processBlock
-                        Rollbacks
-                        maxBound
-                        (Value (SlotNo 12912634))
-                        ( SlotNo 12912634
-                        ,
-                            [ Delete keyd4be_1
-                            , Insert keyb768_0 "out-b768-0"
-                            , Insert keyb768_1 "out-b768-1"
-                            ]
-                        )
-                        phase2
+                processBlock
+                    True
+                    transact
+                    Rollbacks
+                    maxBound
+                    (Value (SlotNo 12912634))
+                    ( SlotNo 12912634
+                    ,
+                        [ Delete keyd4be_1
+                        , Insert keyb768_0 "out-b768-0"
+                        , Insert keyb768_1 "out-b768-1"
+                        ]
+                    )
+                    phase2
             pure ()
 
     it "rollback points queryTip on fresh DB" $ do
@@ -642,36 +658,38 @@ spec = describe "E2E Runner" $ do
                 let key1 = mkTestKey "utxo1"
                     val1 = mkTestValue "output1"
                 phase1 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            ( SlotNo 1
-                            , [Insert key1 val1]
-                            )
-                            phase
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        ( SlotNo 1
+                        , [Insert key1 val1]
+                        )
+                        phase
                 -- Should stay in restoration
                 case phase1 of
-                    InRestoration _ _ -> pure ()
+                    InRestoration _ -> pure ()
                     InFollowing _ _ ->
                         fail "expected Restoration"
 
         it "restoration stores no rollback points" $ do
             withFreshDBRestoration $ \phase transact -> do
                 _ <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            (SlotNo 1, [Insert (mkTestKey "k") (mkTestValue "v")])
-                            phase
-                -- Rollback column should be empty
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        (SlotNo 1, [Insert (mkTestKey "k") (mkTestValue "v")])
+                        phase
+                -- Rollback column has checkpoint sentinel
                 count <-
                     transact
                         $ Store.countPoints Rollbacks
-                count `shouldBe` 0
+                count `shouldBe` 1
 
         it "restoration then transition to following" $ do
             withFreshDBRestoration $ \phase transact -> do
@@ -679,38 +697,40 @@ spec = describe "E2E Runner" $ do
                     val1 = mkTestValue "output1"
                 -- Restore a block
                 phase1 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            ( SlotNo 1
-                            , [Insert key1 val1]
-                            )
-                            phase
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        ( SlotNo 1
+                        , [Insert key1 val1]
+                        )
+                        phase
                 -- Transition to Following
                 case phase1 of
-                    InRestoration _ restoring -> do
+                    InRestoration restoring -> do
                         following <-
                             Backend.toFollowing restoring
                         let phase2 =
                                 InFollowing 0 following
                         -- Process another block in Following
                         phase3 <-
-                            transact
-                                $ processBlock
-                                    Rollbacks
-                                    maxBound
-                                    (Value (SlotNo 2))
-                                    ( SlotNo 2
-                                    , [Insert (mkTestKey "utxo2") (mkTestValue "output2")]
-                                    )
-                                    phase2
+                            processBlock
+                                True
+                                transact
+                                Rollbacks
+                                maxBound
+                                (Value (SlotNo 2))
+                                ( SlotNo 2
+                                , [Insert (mkTestKey "utxo2") (mkTestValue "output2")]
+                                )
+                                phase2
                         -- Should now have a rollback point
                         case phase3 of
                             InFollowing n _ ->
                                 n `shouldBe` 1
-                            InRestoration _ _ ->
+                            InRestoration _ ->
                                 fail "expected Following"
                     InFollowing _ _ ->
                         fail "expected Restoration"
@@ -719,38 +739,41 @@ spec = describe "E2E Runner" $ do
             withFreshDBRestoration $ \phase transact -> do
                 -- Restore 3 blocks
                 phase1 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            ( SlotNo 1
-                            , [Insert (mkTestKey "utxo1") (mkTestValue "out1")]
-                            )
-                            phase
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        ( SlotNo 1
+                        , [Insert (mkTestKey "utxo1") (mkTestValue "out1")]
+                        )
+                        phase
                 phase2 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 2))
-                            ( SlotNo 2
-                            , [Insert (mkTestKey "utxo2") (mkTestValue "out2")]
-                            )
-                            phase1
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 2))
+                        ( SlotNo 2
+                        , [Insert (mkTestKey "utxo2") (mkTestValue "out2")]
+                        )
+                        phase1
                 phase3 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 3))
-                            ( SlotNo 3
-                            , [Insert (mkTestKey "utxo3") (mkTestValue "out3")]
-                            )
-                            phase2
+                    processBlock
+                        False
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 3))
+                        ( SlotNo 3
+                        , [Insert (mkTestKey "utxo3") (mkTestValue "out3")]
+                        )
+                        phase2
                 -- Transition to Following
                 case phase3 of
-                    InRestoration _ restoring -> do
+                    InRestoration restoring -> do
                         following <-
                             Backend.toFollowing restoring
                         -- Set up sentinel for rollback
@@ -763,25 +786,27 @@ spec = describe "E2E Runner" $ do
                                 InFollowing 1 following
                         -- Follow 2 more blocks
                         phase5 <-
-                            transact
-                                $ processBlock
-                                    Rollbacks
-                                    maxBound
-                                    (Value (SlotNo 4))
-                                    ( SlotNo 4
-                                    , [Insert (mkTestKey "utxo4") (mkTestValue "out4")]
-                                    )
-                                    phase4
+                            processBlock
+                                True
+                                transact
+                                Rollbacks
+                                maxBound
+                                (Value (SlotNo 4))
+                                ( SlotNo 4
+                                , [Insert (mkTestKey "utxo4") (mkTestValue "out4")]
+                                )
+                                phase4
                         phase6 <-
-                            transact
-                                $ processBlock
-                                    Rollbacks
-                                    maxBound
-                                    (Value (SlotNo 5))
-                                    ( SlotNo 5
-                                    , [Insert (mkTestKey "utxo5") (mkTestValue "out5")]
-                                    )
-                                    phase5
+                            processBlock
+                                True
+                                transact
+                                Rollbacks
+                                maxBound
+                                (Value (SlotNo 5))
+                                ( SlotNo 5
+                                , [Insert (mkTestKey "utxo5") (mkTestValue "out5")]
+                                )
+                                phase5
                         -- Rollback to slot 4
                         case phase6 of
                             InFollowing n f -> do
@@ -797,7 +822,7 @@ spec = describe "E2E Runner" $ do
                                         deleted `shouldBe` 1
                                     Store.RollbackImpossible ->
                                         fail "unexpected RollbackImpossible"
-                            InRestoration _ _ ->
+                            InRestoration _ ->
                                 fail "expected Following"
                     InFollowing _ _ ->
                         fail "expected Restoration after restore"
@@ -813,13 +838,14 @@ spec = describe "E2E Runner" $ do
                                 map (SlotNo . fromIntegral) [1 .. n]
                         foldM_
                             ( \p slot ->
-                                transact
-                                    $ processBlock
-                                        Rollbacks
-                                        (fromIntegral k)
-                                        (Value slot)
-                                        (slot, [])
-                                        p
+                                processBlock
+                                    True
+                                    transact
+                                    Rollbacks
+                                    (fromIntegral k)
+                                    (Value slot)
+                                    (slot, [])
+                                    p
                             )
                             phase
                             slots
@@ -840,13 +866,14 @@ spec = describe "E2E Runner" $ do
                         finalPhase <-
                             foldM
                                 ( \p slot ->
-                                    transact
-                                        $ processBlock
-                                            Rollbacks
-                                            (fromIntegral k)
-                                            (Value slot)
-                                            (slot, [])
-                                            p
+                                    processBlock
+                                        True
+                                        transact
+                                        Rollbacks
+                                        (fromIntegral k)
+                                        (Value slot)
+                                        (slot, [])
+                                        p
                                 )
                                 phase
                                 slots
@@ -872,7 +899,7 @@ spec = describe "E2E Runner" $ do
                                                 $ "expected rollback to "
                                                     <> show target
                                                     <> " to succeed"
-                            InRestoration _ _ ->
+                            InRestoration _ ->
                                 fail "expected Following"
 
         it "rollback undoes changes"
@@ -884,24 +911,26 @@ spec = describe "E2E Runner" $ do
                     val1 = mkTestValue "val-undo"
                 -- Slot 1: empty block
                 phase1 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 1))
-                            (SlotNo 1, [])
-                            phase
+                    processBlock
+                        True
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 1))
+                        (SlotNo 1, [])
+                        phase
                 -- Slot 2: insert key
                 phase2 <-
-                    transact
-                        $ processBlock
-                            Rollbacks
-                            maxBound
-                            (Value (SlotNo 2))
-                            ( SlotNo 2
-                            , [Insert key1 val1]
-                            )
-                            phase1
+                    processBlock
+                        True
+                        transact
+                        Rollbacks
+                        maxBound
+                        (Value (SlotNo 2))
+                        ( SlotNo 2
+                        , [Insert key1 val1]
+                        )
+                        phase1
                 -- Verify key exists before rollback
                 valBefore <-
                     transact
@@ -924,7 +953,7 @@ spec = describe "E2E Runner" $ do
                             transact
                                 $ KV.query KVCol key1
                         valAfter `shouldBe` Nothing
-                    InRestoration _ _ ->
+                    InRestoration _ ->
                         fail "expected Following"
 
     describe "Crash recovery" $ do
@@ -937,25 +966,27 @@ spec = describe "E2E Runner" $ do
                     val2 = mkTestValue "value2"
                 withDBAt dir $ \phase transact -> do
                     phase1 <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 1))
-                                ( SlotNo 1
-                                , [Insert key1 val1]
-                                )
-                                phase
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 1))
+                            ( SlotNo 1
+                            , [Insert key1 val1]
+                            )
+                            phase
                     _ <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 2))
-                                ( SlotNo 2
-                                , [Insert key2 val2]
-                                )
-                                phase1
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 2))
+                            ( SlotNo 2
+                            , [Insert key2 val2]
+                            )
+                            phase1
                     pure ()
                 -- Second session: reopen and verify
                 withDBAtResume dir $ \_phase transact -> do
@@ -1004,19 +1035,20 @@ spec = describe "E2E Runner" $ do
                             ]
                         )
                     ]
-                applyBlocks phase transact = do
-                    let go p [] = pure p
-                        go p ((slot, ops) : rest) = do
-                            p' <-
-                                transact
-                                    $ processBlock
-                                        Rollbacks
-                                        maxBound
-                                        (Value slot)
-                                        (slot, ops)
-                                        p
-                            go p' rest
-                    go phase blocks
+                applyBlocks phase (runTx :: forall a. Tx a -> IO a) = do
+                    foldM
+                        ( \p (slot, ops) ->
+                            processBlock
+                                True
+                                runTx
+                                Rollbacks
+                                maxBound
+                                (Value slot)
+                                (slot, ops)
+                                p
+                        )
+                        phase
+                        blocks
             -- Clean run: all blocks in one session
             cleanHistory <-
                 withSystemTempDirectory "e2e-clean" $ \dir ->
@@ -1034,13 +1066,14 @@ spec = describe "E2E Runner" $ do
                         let go p [] = pure p
                             go p ((slot, ops) : rest) = do
                                 p' <-
-                                    transact
-                                        $ processBlock
-                                            Rollbacks
-                                            maxBound
-                                            (Value slot)
-                                            (slot, ops)
-                                            p
+                                    processBlock
+                                        True
+                                        transact
+                                        Rollbacks
+                                        maxBound
+                                        (Value slot)
+                                        (slot, ops)
+                                        p
                                 go p' rest
                         _ <- go phase firstHalf
                         pure ()
@@ -1050,13 +1083,14 @@ spec = describe "E2E Runner" $ do
                             let go p [] = pure p
                                 go p ((slot, ops) : rest) = do
                                     p' <-
-                                        transact
-                                            $ processBlock
-                                                Rollbacks
-                                                maxBound
-                                                (Value slot)
-                                                (slot, ops)
-                                                p
+                                        processBlock
+                                            True
+                                            transact
+                                            Rollbacks
+                                            maxBound
+                                            (Value slot)
+                                            (slot, ops)
+                                            p
                                     go p' rest
                             go phase secondHalf
                         transact
@@ -1089,13 +1123,14 @@ spec = describe "E2E Runner" $ do
                             let go p [] = pure p
                                 go p ((slot, ops) : rest) = do
                                     p' <-
-                                        transact
-                                            $ processBlock
-                                                Rollbacks
-                                                maxBound
-                                                (Value slot)
-                                                (slot, ops)
-                                                p
+                                        processBlock
+                                            True
+                                            transact
+                                            Rollbacks
+                                            maxBound
+                                            (Value slot)
+                                            (slot, ops)
+                                            p
                                     go p' rest
                             _ <- go phase firstHalf
                             pure ()
@@ -1103,13 +1138,14 @@ spec = describe "E2E Runner" $ do
                             let go p [] = pure p
                                 go p ((slot, ops) : rest) = do
                                     p' <-
-                                        transact
-                                            $ processBlock
-                                                Rollbacks
-                                                maxBound
-                                                (Value slot)
-                                                (slot, ops)
-                                                p
+                                        processBlock
+                                            True
+                                            transact
+                                            Rollbacks
+                                            maxBound
+                                            (Value slot)
+                                            (slot, ops)
+                                            p
                                     go p' rest
                             _ <- go phase secondHalf
                             forM

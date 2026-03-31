@@ -21,6 +21,9 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , mkCSMTOps
     , openCSMTOps
     )
+import Cardano.UTxOCSMT.Application.Database.Interface
+    ( WithSentinel (..)
+    )
 import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
     , newRunRocksDBTransactionUnguarded
@@ -67,8 +70,7 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     )
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
 import ChainFollower.Backend qualified as Backend
-import ChainFollower.Rollbacks.Store qualified as CFStore
-import ChainFollower.Runner (Phase (..))
+import ChainFollower.Runner (Phase (..), readCheckpoint)
 import Control.Concurrent.Async (async, link)
 import Control.Concurrent.STM (newTVarIO)
 import Control.Exception (SomeException, catch, displayException)
@@ -256,15 +258,14 @@ main = withUtf8 $ do
             let initialPhase =
                     InRestoration restoring
 
-            -- Build available points from
-            -- rollback history
-            history <-
+            -- Read checkpoint from rollback column
+            mCheckpoint <-
                 transact runner
-                    $ CFStore.queryHistory Rollbacks
+                    $ readCheckpoint Rollbacks
             let availablePoints =
-                    [ setupStartingPoint
-                    | null history
-                    ]
+                    case mCheckpoint of
+                        Just (Value cp) -> [cp]
+                        _ -> [setupStartingPoint]
 
             -- Create checkpoint actions
             let setCheckpoint point =
@@ -273,14 +274,6 @@ main = withUtf8 $ do
                             decodePoint
                             encodePoint
                             point
-                -- Transaction-level checkpoint for atomic
-                -- block processing
-                txCheckpoint point =
-                    putBaseCheckpoint
-                        decodePoint
-                        encodePoint
-                        point
-
             -- Log before starting the application
             trace ApplicationStarting
             traceWith metricsEvent
@@ -302,7 +295,6 @@ main = withUtf8 $ do
                             metricsEvent
                             (contra Application)
                             runner
-                            txCheckpoint
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)
@@ -319,7 +311,6 @@ main = withUtf8 $ do
                             metricsEvent
                             (contra Application)
                             runner
-                            txCheckpoint
                             backendInit
                             armageddonParams
                             (fromIntegral setupSecurityParam)

@@ -16,9 +16,6 @@ import Cardano.Node.Client.E2E.Devnet
 import Cardano.UTxOCSMT.Application.Database.Backend
     ( createBackend
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
-    ( Columns (..)
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , DbState (..)
@@ -46,7 +43,6 @@ import Cardano.UTxOCSMT.Application.Run.Setup
     , setupDB
     )
 import ChainFollower.Backend qualified as Backend
-import ChainFollower.Rollbacks.Store qualified as CFStore
 import ChainFollower.Runner (Phase (..))
 import Control.Concurrent.STM (newTVarIO)
 import Control.Lens (iso)
@@ -144,17 +140,12 @@ spec = describe "Genesis chain sync" $ do
                                             createBackend
                                                 kvOnlyOps
                                                 slotHash
-                                    initialCount <-
-                                        transact runner
-                                            $ CFStore.countPoints
-                                                Rollbacks
-                                    following <-
-                                        Backend.resumeFollowing
+                                    restoring <-
+                                        Backend.start
                                             backendInit
                                     let initialPhase =
-                                            InFollowing
-                                                initialCount
-                                                following
+                                            InRestoration
+                                                restoring
                                     notifyTVar <- newTVarIO (0 :: Int)
                                     result <-
                                         timeout

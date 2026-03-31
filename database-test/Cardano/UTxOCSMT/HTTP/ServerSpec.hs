@@ -563,27 +563,29 @@ spec = do
                     let key1 = mkTestKey "utxo1"
                         val1 = mkTestValue "output1"
                     phase1 <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 100))
-                                ( SlotNo 100
-                                , [Insert key1 val1]
-                                )
-                                phase
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 100))
+                            ( SlotNo 100
+                            , [Insert key1 val1]
+                            )
+                            phase
                     let key2 = mkTestKey "utxo2"
                         val2 = mkTestValue "output2"
                     _ <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 200))
-                                ( SlotNo 200
-                                , [Insert key2 val2]
-                                )
-                                phase1
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 200))
+                            ( SlotNo 200
+                            , [Insert key2 val2]
+                            )
+                            phase1
                     session
                         (pure Nothing)
                         (queryTestMerkleRoots runner)
@@ -631,15 +633,16 @@ spec = do
                         testTxId = "7465737475747870"
                         testTxIx = 0 :: Word16
                     _ <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 100))
-                                ( SlotNo 100
-                                , [Insert testKey testValue]
-                                )
-                                phase
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 100))
+                            ( SlotNo 100
+                            , [Insert testKey testValue]
+                            )
+                            phase
                     let proofQuery txId txIx =
                             if txId == testTxId && txIx == testTxIx
                                 then
@@ -704,19 +707,20 @@ spec = do
                         key3 = mkTestKey "utxo3"
                         value3 = BL.fromStrict $ "BBBB" <> "output3-data"
                     _ <-
-                        transact
-                            $ processBlock
-                                Rollbacks
-                                maxBound
-                                (Value (SlotNo 100))
-                                ( SlotNo 100
-                                ,
-                                    [ Insert key1 value1
-                                    , Insert key2 value2
-                                    , Insert key3 value3
-                                    ]
-                                )
-                                phase
+                        processBlock
+                            True
+                            transact
+                            Rollbacks
+                            maxBound
+                            (Value (SlotNo 100))
+                            ( SlotNo 100
+                            ,
+                                [ Insert key1 value1
+                                , Insert key2 value2
+                                , Insert key3 value3
+                                ]
+                            )
+                            phase
                     let byAddress = queryTestByAddress runner
                         addr1Hex = "41414141"
                         addr2Hex = "42424242"
