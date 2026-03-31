@@ -248,12 +248,17 @@ follower
         go phase =
             Follower
                 { rollForward =
-                    \Fetched{fetchedPoint, fetchedBlock} _tipSlot -> do
+                    \Fetched{fetchedPoint, fetchedBlock} tipSlot -> do
                         let (txCount, utxoChanges) =
                                 uTxOsWithTxCount fetchedBlock
                             ops =
                                 changeToOperation <$> utxoChanges
                             opsCount = length ops
+                            blockSlot = case Network.pointSlot fetchedPoint of
+                                At (SlotNo s) -> s
+                                _ -> 0
+                            atTip = blockSlot + fromIntegral securityParam
+                                >= unSlotNo tipSlot
                         replicateM_ opsCount trUTxO
                         case Network.pointSlot fetchedPoint of
                             At slot
@@ -265,13 +270,14 @@ follower
                                             opsCount
                             _ -> pure ()
                         phase' <-
-                            transact
-                                $ processBlock
-                                    Rollbacks
-                                    securityParam
-                                    (Value fetchedPoint)
-                                    (fetchedPoint, ops)
-                                    phase
+                            processBlock
+                                atTip
+                                transact
+                                Rollbacks
+                                securityParam
+                                (Value fetchedPoint)
+                                (fetchedPoint, ops)
+                                phase
                         atomically $ modifyTVar' notifyTVar (+ 1)
                         pure $ go phase'
                 , rollBackward = \point -> do
@@ -306,7 +312,7 @@ follower
                                             runner
                                             armageddonParams
                                         restoring <-
-                                            Backend.startRestoring
+                                            Backend.start
                                                 backendInit
                                         pure
                                             $ Reset
@@ -319,10 +325,9 @@ follower
                                                 securityParam
                                                 notifyTVar
                                                 ( InRestoration
-                                                    0
                                                     restoring
                                                 )
-                        InRestoration _ _ ->
+                        InRestoration _ ->
                             pure
                                 $ Progress
                                 $ go phase

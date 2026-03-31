@@ -87,18 +87,8 @@ createBackend
         (hash, Maybe hash)
 createBackend ops slotHash =
     Backend.Init
-        { Backend.startRestoring =
+        { Backend.start =
             pure $ mkRestoring kvCSMTOps
-        , Backend.resumeFollowing = do
-            mFull <- liftIO (toFull ops)
-            case mFull of
-                Just fullOps ->
-                    pure
-                        $ mkFollowing
-                            (fullOpsToCSMTOps fullOps)
-                Nothing ->
-                    fail
-                        "createBackend: toFull failed"
         }
   where
     kvCSMTOps = kvCommonToCSMTOps (kvCommon ops)

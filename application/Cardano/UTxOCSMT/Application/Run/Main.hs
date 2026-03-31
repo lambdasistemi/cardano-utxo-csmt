@@ -249,17 +249,12 @@ main = withUtf8 $ do
             let backendInit =
                     createBackend kvOnlyOps slotHash
 
-            -- Count rollback points and build
-            -- initial phase
-            initialCount <-
-                transact runner
-                    $ CFStore.countPoints Rollbacks
-            following <-
-                Backend.resumeFollowing backendInit
+            -- Start in restoration — Runner transitions
+            -- to following when atTip=True
+            restoring <-
+                Backend.start backendInit
             let initialPhase =
-                    InFollowing
-                        initialCount
-                        following
+                    InRestoration restoring
 
             -- Build available points from
             -- rollback history
