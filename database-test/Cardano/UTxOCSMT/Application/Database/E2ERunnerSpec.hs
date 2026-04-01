@@ -49,6 +49,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
 import Control.Monad (foldM, foldM_, forM, forM_)
+import Control.Tracer (nullTracer)
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
@@ -371,6 +372,7 @@ spec = describe "E2E Runner" $ do
         withFreshDB $ \phase transact -> do
             _ <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -387,6 +389,7 @@ spec = describe "E2E Runner" $ do
             -- Forward slot 1
             phase1 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -401,6 +404,7 @@ spec = describe "E2E Runner" $ do
                 val2 = mkTestValue "output2"
             phase2 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -438,6 +442,7 @@ spec = describe "E2E Runner" $ do
                 -- Slot 1: insert two
                 phase1 <-
                     processBlock
+                        nullTracer
                         True
                         transact
                         Rollbacks
@@ -452,6 +457,7 @@ spec = describe "E2E Runner" $ do
                     val3 = mkTestValue "output3"
                 phase2 <-
                     processBlock
+                        nullTracer
                         True
                         transact
                         Rollbacks
@@ -464,6 +470,7 @@ spec = describe "E2E Runner" $ do
                 -- Slot 3: empty block
                 _ <-
                     processBlock
+                        nullTracer
                         True
                         transact
                         Rollbacks
@@ -477,6 +484,7 @@ spec = describe "E2E Runner" $ do
         withFreshDB $ \phase transact -> do
             phase1 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -508,6 +516,7 @@ spec = describe "E2E Runner" $ do
             -- Follow one block
             _ <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -530,6 +539,7 @@ spec = describe "E2E Runner" $ do
             -- Auto-pruning kicks in when count > k+1
             phase1 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -539,6 +549,7 @@ spec = describe "E2E Runner" $ do
                     phase
             phase2 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -548,6 +559,7 @@ spec = describe "E2E Runner" $ do
                     phase1
             _ <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -601,6 +613,7 @@ spec = describe "E2E Runner" $ do
             -- Bootstrap: insert what block 282639 needs
             phase1 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -613,6 +626,7 @@ spec = describe "E2E Runner" $ do
             -- Block 282639: 1 delete + 2 inserts
             phase2 <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -629,6 +643,7 @@ spec = describe "E2E Runner" $ do
             -- Block 283086: delete d4be#1
             _ <-
                 processBlock
+                    nullTracer
                     True
                     transact
                     Rollbacks
@@ -659,6 +674,7 @@ spec = describe "E2E Runner" $ do
                     val1 = mkTestValue "output1"
                 phase1 <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -678,6 +694,7 @@ spec = describe "E2E Runner" $ do
             withFreshDBRestoration $ \phase transact -> do
                 _ <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -698,6 +715,7 @@ spec = describe "E2E Runner" $ do
                 -- Restore a block
                 phase1 <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -717,6 +735,7 @@ spec = describe "E2E Runner" $ do
                         -- Process another block in Following
                         phase3 <-
                             processBlock
+                                nullTracer
                                 True
                                 transact
                                 Rollbacks
@@ -740,6 +759,7 @@ spec = describe "E2E Runner" $ do
                 -- Restore 3 blocks
                 phase1 <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -751,6 +771,7 @@ spec = describe "E2E Runner" $ do
                         phase
                 phase2 <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -762,6 +783,7 @@ spec = describe "E2E Runner" $ do
                         phase1
                 phase3 <-
                     processBlock
+                        nullTracer
                         False
                         transact
                         Rollbacks
@@ -787,6 +809,7 @@ spec = describe "E2E Runner" $ do
                         -- Follow 2 more blocks
                         phase5 <-
                             processBlock
+                                nullTracer
                                 True
                                 transact
                                 Rollbacks
@@ -798,6 +821,7 @@ spec = describe "E2E Runner" $ do
                                 phase4
                         phase6 <-
                             processBlock
+                                nullTracer
                                 True
                                 transact
                                 Rollbacks
@@ -839,6 +863,7 @@ spec = describe "E2E Runner" $ do
                         foldM_
                             ( \p slot ->
                                 processBlock
+                                    nullTracer
                                     True
                                     transact
                                     Rollbacks
@@ -867,6 +892,7 @@ spec = describe "E2E Runner" $ do
                             foldM
                                 ( \p slot ->
                                     processBlock
+                                        nullTracer
                                         True
                                         transact
                                         Rollbacks
@@ -912,6 +938,7 @@ spec = describe "E2E Runner" $ do
                 -- Slot 1: empty block
                 phase1 <-
                     processBlock
+                        nullTracer
                         True
                         transact
                         Rollbacks
@@ -922,6 +949,7 @@ spec = describe "E2E Runner" $ do
                 -- Slot 2: insert key
                 phase2 <-
                     processBlock
+                        nullTracer
                         True
                         transact
                         Rollbacks
@@ -967,6 +995,7 @@ spec = describe "E2E Runner" $ do
                 withDBAt dir $ \phase transact -> do
                     phase1 <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks
@@ -978,6 +1007,7 @@ spec = describe "E2E Runner" $ do
                             phase
                     _ <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks
@@ -1039,6 +1069,7 @@ spec = describe "E2E Runner" $ do
                     foldM
                         ( \p (slot, ops) ->
                             processBlock
+                                nullTracer
                                 True
                                 runTx
                                 Rollbacks
@@ -1067,6 +1098,7 @@ spec = describe "E2E Runner" $ do
                             go p ((slot, ops) : rest) = do
                                 p' <-
                                     processBlock
+                                        nullTracer
                                         True
                                         transact
                                         Rollbacks
@@ -1084,6 +1116,7 @@ spec = describe "E2E Runner" $ do
                                 go p ((slot, ops) : rest) = do
                                     p' <-
                                         processBlock
+                                            nullTracer
                                             True
                                             transact
                                             Rollbacks
@@ -1124,6 +1157,7 @@ spec = describe "E2E Runner" $ do
                                 go p ((slot, ops) : rest) = do
                                     p' <-
                                         processBlock
+                                            nullTracer
                                             True
                                             transact
                                             Rollbacks
@@ -1139,6 +1173,7 @@ spec = describe "E2E Runner" $ do
                                 go p ((slot, ops) : rest) = do
                                     p' <-
                                         processBlock
+                                            nullTracer
                                             True
                                             transact
                                             Rollbacks

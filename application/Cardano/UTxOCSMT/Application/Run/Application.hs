@@ -22,7 +22,8 @@ import Cardano.UTxOCSMT.Application.ChainSyncN2C
     ( mkN2CChainSyncApplication
     )
 import Cardano.UTxOCSMT.Application.Database.Backend
-    ( processBlock
+    ( RunnerEvent (..)
+    , processBlock
     , rollbackTo
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
@@ -62,7 +63,7 @@ import ChainFollower.Runner (Phase (..))
 import Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import Control.Exception (throwIO)
 import Control.Monad (replicateM_)
-import Control.Tracer (Tracer (..))
+import Control.Tracer (Tracer (..), contramap)
 import Data.ByteString.Lazy (ByteString)
 
 import Data.Tracer.TraceWith
@@ -94,6 +95,7 @@ data ApplicationTrace
     | ApplicationIntersectionFailed
     | ApplicationRollingBack Point
     | ApplicationBlockProcessed SlotNo Int Int
+    | ApplicationRunnerEvent (RunnerEvent (WithSentinel Point))
     deriving (Show)
 
 -- | Render an 'ApplicationTrace'
@@ -117,6 +119,16 @@ renderApplicationTrace
             ++ " txs, "
             ++ show utxoCount
             ++ " UTxO changes"
+renderApplicationTrace
+    (ApplicationRunnerEvent event) =
+        "Runner: " ++ case event of
+            BlockRestored slot ->
+                "block restored at " ++ show slot
+            BlockFollowed slot ->
+                "block followed at " ++ show slot
+            PhaseTransition slot ->
+                "PHASE TRANSITION restoration → following at "
+                    ++ show slot
 
 origin :: Network.Point block
 origin = Network.Point{getPoint = Origin}
@@ -273,6 +285,10 @@ follower
                             _ -> pure ()
                         phase' <-
                             processBlock
+                                ( contramap
+                                    ApplicationRunnerEvent
+                                    tracer
+                                )
                                 atTip
                                 transact
                                 Rollbacks

@@ -5,6 +5,7 @@ module Cardano.UTxOCSMT.Application.Database.Backend
       -- * Re-exports for Application.hs
     , Backend.Init (..)
     , Runner.Phase (..)
+    , Runner.RunnerEvent (..)
     , Runner.processBlock
     , Runner.rollbackTo
     , Runner.rollbackCount
