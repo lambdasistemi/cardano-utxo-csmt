@@ -42,7 +42,8 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     )
 import Cardano.UTxOCSMT.Application.Metrics
     ( MetricsEvent (..)
-    , SyncPhase (Synced)
+    , SyncPhase (..)
+    , SyncThreshold (..)
     )
 import Cardano.UTxOCSMT.Application.UTxOs
     ( Change (..)
@@ -160,6 +161,8 @@ changeToOperation (Create k v) = Insert k v
 intersector
     :: Tracer IO ApplicationTrace
     -> IO ()
+    -> (MetricsEvent -> IO ())
+    -> SyncThreshold
     -> RunTransaction
         ColumnFamily
         BatchOp
@@ -186,6 +189,8 @@ intersector
 intersector
     TraceWith{trace, tracer}
     trUTxO
+    metricTrace
+    syncThreshold'
     runner
     backendInit
     armageddonParams
@@ -199,6 +204,8 @@ intersector
                     $ follower
                         tracer
                         trUTxO
+                        metricTrace
+                        syncThreshold'
                         runner
                         backendInit
                         armageddonParams
@@ -211,6 +218,8 @@ intersector
                     ( intersector
                         tracer
                         trUTxO
+                        metricTrace
+                        syncThreshold'
                         runner
                         backendInit
                         armageddonParams
@@ -224,6 +233,8 @@ intersector
 follower
     :: Tracer IO ApplicationTrace
     -> IO ()
+    -> (MetricsEvent -> IO ())
+    -> SyncThreshold
     -> RunTransaction
         ColumnFamily
         BatchOp
@@ -232,7 +243,6 @@ follower
         ByteString
         ByteString
         IO
-    -- ^ Checkpoint action (runs inside transaction)
     -> Backend.Init
         IO
         AppTx
@@ -251,6 +261,8 @@ follower
 follower
     TraceWith{trace, tracer}
     trUTxO
+    metricTrace
+    syncThreshold'
     runner@RunTransaction{transact}
     backendInit
     armageddonParams
@@ -270,9 +282,13 @@ follower
                             blockSlot = case Network.pointSlot fetchedPoint of
                                 At (SlotNo s) -> s
                                 _ -> 0
-                            atTip =
+                            withinStabilityWindow =
                                 blockSlot + fromIntegral securityParam
                                     >= unSlotNo tipSlot
+                            slotsBehind =
+                                if unSlotNo tipSlot >= blockSlot
+                                    then unSlotNo tipSlot - blockSlot
+                                    else 0
                         replicateM_ opsCount trUTxO
                         case Network.pointSlot fetchedPoint of
                             At slot
@@ -289,13 +305,20 @@ follower
                                     ApplicationRunnerEvent
                                     tracer
                                 )
-                                atTip
+                                withinStabilityWindow
                                 transact
                                 Rollbacks
                                 securityParam
                                 (Value fetchedPoint)
                                 (fetchedPoint, ops)
                                 phase
+                        metricTrace $ SyncPhaseEvent $ case phase' of
+                            InRestoration _ -> Restoring
+                            InFollowing _ _
+                                | slotsBehind
+                                    <= unSyncThreshold syncThreshold' ->
+                                    Synced
+                                | otherwise -> Following
                         atomically $ modifyTVar' notifyTVar (+ 1)
                         pure $ go phase'
                 , rollBackward = \point -> do
@@ -337,6 +360,8 @@ follower
                                             $ intersector
                                                 tracer
                                                 trUTxO
+                                                metricTrace
+                                                syncThreshold'
                                                 runner
                                                 backendInit
                                                 armageddonParams
@@ -352,7 +377,8 @@ follower
                 }
 
 application
-    :: EpochSlots
+    :: SyncThreshold
+    -> EpochSlots
     -> NetworkMagic
     -> String
     -> PortNumber
@@ -386,6 +412,7 @@ application
     -> [Point]
     -> IO Void
 application
+    syncThreshold'
     epochSlots
     networkMagic
     nodeName
@@ -420,6 +447,8 @@ application
                     $ intersector
                         tracer
                         counting
+                        metricTrace
+                        syncThreshold'
                         runner
                         backendInit
                         armageddonParams
@@ -454,7 +483,8 @@ application
                         "application: impossible branch"
 
 applicationN2C
-    :: EpochSlots
+    :: SyncThreshold
+    -> EpochSlots
     -> NetworkMagic
     -> FilePath
     -> Point
@@ -486,6 +516,7 @@ applicationN2C
     -> [Point]
     -> IO Void
 applicationN2C
+    syncThreshold'
     epochSlots
     networkMagic'
     socketPath
@@ -510,6 +541,8 @@ applicationN2C
                     intersector
                         tracer
                         counting
+                        metricTrace
+                        syncThreshold'
                         runner
                         backendInit
                         armageddonParams

@@ -28,6 +28,9 @@ import Cardano.UTxOCSMT.Application.Database.RocksDB
     ( newRunRocksDBTransaction
     , newRunRocksDBTransactionUnguarded
     )
+import Cardano.UTxOCSMT.Application.Metrics
+    ( SyncThreshold (..)
+    )
 import Cardano.UTxOCSMT.Application.Run.Application
     ( applicationN2C
     )
@@ -151,6 +154,7 @@ spec = describe "Genesis chain sync" $ do
                                         timeout
                                             15_000_000
                                             $ applicationN2C
+                                                (SyncThreshold 100)
                                                 ( EpochSlots
                                                     setupEpochSlots
                                                 )

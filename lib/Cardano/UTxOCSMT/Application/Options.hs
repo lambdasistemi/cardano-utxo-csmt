@@ -20,7 +20,10 @@ import Control.Applicative ((<|>))
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength (..)
     )
-import Data.Word (Word16, Word64)
+import Cardano.UTxOCSMT.Application.Metrics.Types
+    ( SyncThreshold (..)
+    )
+import Data.Word (Word16)
 import Network.Socket (PortNumber)
 import OptEnvConf
     ( Parser
@@ -81,8 +84,8 @@ data Options = Options
     , apiPort :: Maybe PortNumber
     , apiDocsPort :: Maybe PortNumber
     , metricsOn :: Bool
-    , syncThreshold :: Word64
-    -- ^ Number of slots behind chain tip to consider synced (default: 100)
+    , syncThreshold :: SyncThreshold
+    -- ^ Maximum slots behind chain tip to be considered synced (default: 100)
     , genesisFile :: FilePath
     -- ^ Path to shelley-genesis.json (required for security parameter)
     , byronGenesisFile :: Maybe FilePath
@@ -235,18 +238,19 @@ apiDocsPortOption =
             , option
             ]
 
-syncThresholdOption :: Parser Word64
+syncThresholdOption :: Parser SyncThreshold
 syncThresholdOption =
-    setting
-        [ long "sync-threshold"
-        , help
-            "Number of slots behind chain tip to consider synced \
-            \(default: 100, ~33 minutes)"
-        , metavar "SLOTS"
-        , value 100
-        , reader auto
-        , option
-        ]
+    SyncThreshold
+        <$> setting
+            [ long "sync-threshold"
+            , help
+                "Maximum slots behind chain tip to be considered synced \
+                \(default: 100, ~5 blocks)"
+            , metavar "SLOTS"
+            , value 100
+            , reader auto
+            , option
+            ]
 
 genesisFileOption :: Parser FilePath
 genesisFileOption =

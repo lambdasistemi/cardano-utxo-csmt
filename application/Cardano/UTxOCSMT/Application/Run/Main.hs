@@ -285,6 +285,7 @@ main = withUtf8 $ do
                 ( case connectionMode options of
                     N2N{n2nHost, n2nPort} ->
                         application
+                            (syncThreshold options)
                             epochSlots
                             setupNetworkMagic
                             n2nHost
@@ -303,6 +304,7 @@ main = withUtf8 $ do
                             availablePoints
                     N2C{n2cSocket} ->
                         applicationN2C
+                            (syncThreshold options)
                             epochSlots
                             setupNetworkMagic
                             n2cSocket

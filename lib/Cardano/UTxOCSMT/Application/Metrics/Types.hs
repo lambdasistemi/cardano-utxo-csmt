@@ -14,6 +14,7 @@ This module defines the core data types used for metrics collection:
 module Cardano.UTxOCSMT.Application.Metrics.Types
     ( -- * Sync phases
       SyncPhase (..)
+    , SyncThreshold (..)
 
       -- * Metrics events
     , MetricsEvent (..)
@@ -81,15 +82,18 @@ import Ouroboros.Network.Point (Block (..), WithOrigin (..))
 
 -- | Current synchronization phase
 data SyncPhase
-    = -- | Catching up with the chain
-      Syncing
-    | -- | Fully synced with chain tip
+    = -- | Bulk ingestion, CSMT not built, no queries
+      Restoring
+    | -- | CSMT built, processing blocks, may be behind
+      Following
+    | -- | CSMT built, within threshold of tip
       Synced
     deriving (Show, Eq)
 
 instance ToJSON SyncPhase where
     toJSON = \case
-        Syncing -> "syncing"
+        Restoring -> "restoring"
+        Following -> "following"
         Synced -> "synced"
 
 instance ToSchema SyncPhase where
@@ -99,11 +103,17 @@ instance ToSchema SyncPhase where
             $ mempty
             & Swagger.type_ ?~ Swagger.SwaggerString
             & Swagger.enum_
-                ?~ [ "syncing"
+                ?~ [ "restoring"
+                   , "following"
                    , "synced"
                    ]
             & description
-                ?~ "Current synchronization phase: syncing or synced"
+                ?~ "Current synchronization phase: restoring, following, or synced"
+
+-- | Maximum slots behind chain tip to be considered synced.
+newtype SyncThreshold = SyncThreshold {unSyncThreshold :: Word64}
+    deriving stock (Show, Eq)
+    deriving newtype (Num, Ord)
 
 -- | The signal we receive to update the metrics
 data MetricsEvent

@@ -250,9 +250,10 @@
             "type": "object"
         },
         "SyncPhase": {
-            "description": "Current synchronization phase: syncing or synced",
+            "description": "Current synchronization phase: restoring, following, or synced",
             "enum": [
-                "syncing",
+                "restoring",
+                "following",
                 "synced"
             ],
             "type": "string"
