@@ -203,7 +203,7 @@ mkReadyResponse
     -- ^ Current metrics, if available
     -> ReadyResponse
     -- ^ Readiness response with sync status
-mkReadyResponse threshold mMetrics =
+mkReadyResponse _threshold mMetrics =
     case mMetrics of
         Nothing ->
             ReadyResponse
