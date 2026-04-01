@@ -58,6 +58,7 @@ import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
 import Control.Monad.IO.Class (liftIO)
+import Control.Tracer (nullTracer)
 import Data.Aeson (eitherDecode)
 import Data.ByteArray.Encoding
     ( Base (..)
@@ -564,6 +565,7 @@ spec = do
                         val1 = mkTestValue "output1"
                     phase1 <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks
@@ -577,6 +579,7 @@ spec = do
                         val2 = mkTestValue "output2"
                     _ <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks
@@ -634,6 +637,7 @@ spec = do
                         testTxIx = 0 :: Word16
                     _ <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks
@@ -708,6 +712,7 @@ spec = do
                         value3 = BL.fromStrict $ "BBBB" <> "output3-data"
                     _ <-
                         processBlock
+                            nullTracer
                             True
                             transact
                             Rollbacks

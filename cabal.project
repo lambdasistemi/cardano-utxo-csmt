@@ -20,8 +20,8 @@ repository cardano-haskell-packages
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/rocksdb-haskell.git
-  tag: a3e86b39f9510fea54abf734ee84aec33d0d683f
-  --sha256: 1gjzqhf81fy3bpc79ndmx3s77x3s1gf0lsk762acbfnpfh6g1hd0
+  tag: 85977e8673f171684bf52ccde437db38bb06c478
+  --sha256: 14idabzvfcz3ll10ha7mm30y0c7m521xvq88q0w71nc0imjwn2h1
 
 source-repository-package
   type: git
@@ -38,8 +38,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/rocksdb-kv-transactions
-  tag: 44c3c2a4b7bab8ca0ca444c99977a358fc6af0ae
-  --sha256: 0rxc1g7imzlapdgab1v6cyy5nrgg8ilwbr9r015dxbdazl5rm9b9
+  tag: e2e77579888ebbd832ea750ebf2635dfc3307025
+  --sha256: 0nd1yz6k3xh1p7nlswp2jbw74bzqr7bvz11kcfyhhimqmjhkqvwm
 
 source-repository-package
   type: git
@@ -56,14 +56,14 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/cardano-node-clients
-  tag: f4cf9f3e68b7ce2ea0a9fcbe0759ecfffdcd3d27
-  --sha256: 0c7dgy3qanc2wd6k6bxz7zi8m5b1wlfh6as7a6v63a08jqnglkcl
+  tag: 73287cdd52cdc973daf760c83da38472c73caa8d
+  --sha256: 1w49mgc6lccks0v6sm1018fj3zpgpg1504v7ypgcmv5js82faf31
 
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/chain-follower
-  tag: 61e9a34181ea7f34daf67463eaf8aeb7414854c0
-  --sha256: 0gc8sq8dwi1g5js8qrcmnka7p19qqviwmgx4iyp43qk56x7n4lap
+  tag: 9db51071e189d72bcd2fce5ab3735a65b7763f9e
+  --sha256: 167j782qqnpymdi14pnakcqdmcj9p6bzk72n7px41pxs3z3w1041
 
 -- Enable iohk flag for contra-tracer-contrib to use CHaP's simple API
 constraints: contra-tracer-contrib +iohk
