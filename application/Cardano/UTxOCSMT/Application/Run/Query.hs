@@ -41,6 +41,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
 import Cardano.UTxOCSMT.Application.Metrics
     ( Metrics (..)
     , SyncPhase (..)
+    , SyncThreshold (..)
     )
 import Cardano.UTxOCSMT.Application.Run.Config
     ( context
@@ -197,8 +198,7 @@ The service is considered ready when:
 If no metrics are available yet, the service reports as not ready.
 -}
 mkReadyResponse
-    :: Word64
-    -- ^ Sync threshold (maximum slots behind to be considered ready)
+    :: SyncThreshold
     -> Maybe Metrics
     -- ^ Current metrics, if available
     -> ReadyResponse
@@ -215,15 +215,8 @@ mkReadyResponse threshold mMetrics =
         Just Metrics{chainTipSlot, lastBlockPoint, syncPhase} ->
             let tip = unSlotNo <$> chainTipSlot
                 processed = getProcessedSlot lastBlockPoint
-                -- Handle case where processed > tip due to protocol timing
-                -- (headers can arrive before tip is updated). When this
-                -- happens, we're synced so slotsBehind is 0.
                 behind = safeSub <$> tip <*> processed
-                isSynced = syncPhase == Just Synced
-                isReady =
-                    isSynced && case behind of
-                        Just b -> b <= threshold
-                        Nothing -> False
+                isReady = syncPhase == Just Synced
             in  ReadyResponse
                     { ready = isReady
                     , tipSlot = tip

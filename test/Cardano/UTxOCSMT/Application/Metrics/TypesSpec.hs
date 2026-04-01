@@ -49,11 +49,11 @@ spec :: Spec
 spec = describe "Metrics.Types" $ do
     describe "SyncPhase" $ do
         it "show produces valid strings" $ do
-            forAll (elements [Syncing, Synced]) $ \phase ->
+            forAll (elements [Restoring, Following, Synced]) $ \phase ->
                 show phase `shouldSatisfy` (not . null)
 
-        it "Syncing /= Synced" $ do
-            Syncing `shouldSatisfy` (/= Synced)
+        it "Following /= Synced" $ do
+            Following `shouldSatisfy` (/= Synced)
 
     describe "renderPrometheus" $ do
         it "contains prefix cardano_utxo_csmt" $ do
@@ -69,8 +69,8 @@ spec = describe "Metrics.Types" $ do
                 rendered = renderPrometheus m
             T.isInfixOf "cardano_utxo_csmt_ready 1" rendered `shouldBe` True
 
-        it "ready=0 when syncing" $ do
-            let m = defaultMetrics{syncPhase = Just Syncing}
+        it "ready=0 when following" $ do
+            let m = defaultMetrics{syncPhase = Just Following}
                 rendered = renderPrometheus m
             T.isInfixOf "cardano_utxo_csmt_ready 0" rendered `shouldBe` True
 

@@ -186,7 +186,7 @@ stealMetricsEvent
 stealMetricsEvent (NotEmpty point) =
     Just $ BaseCheckpointEvent point
 stealMetricsEvent (Application (ApplicationRollingBack _)) =
-    Just $ SyncPhaseEvent Syncing
+    Just $ SyncPhaseEvent Following
 stealMetricsEvent _ = Nothing
 
 {- | Match high-frequency events for throttling.

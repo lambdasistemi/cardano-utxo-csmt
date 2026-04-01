@@ -15,6 +15,7 @@ module Cardano.UTxOCSMT.Application.Metrics
     , MetricsEvent (..)
     , Metrics (..)
     , SyncPhase (..)
+    , SyncThreshold (..)
     , renderBlockPoint
     , renderPoint
     , renderPrometheus
@@ -26,6 +27,7 @@ import Cardano.UTxOCSMT.Application.Metrics.Types
     ( Metrics (..)
     , MetricsEvent (..)
     , SyncPhase (..)
+    , SyncThreshold (..)
     , renderBlockPoint
     , renderPoint
     , renderPrometheus
