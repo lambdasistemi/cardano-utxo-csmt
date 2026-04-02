@@ -5,7 +5,8 @@ where
 
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.UTxOCSMT.Application.Database.Backend
-    ( createBackend
+    ( BackendEvent (..)
+    , createBackend
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
@@ -248,8 +249,14 @@ main = withUtf8 $ do
                     runner
 
             -- Create Backend.Init
-            let backendInit =
-                    createBackend kvOnlyOps slotHash
+            let backendTracer = contramap backendEventToPhase metricsEvent
+                  where
+                    backendEventToPhase ReplayStarted =
+                        SyncPhaseEvent Replaying
+                    backendEventToPhase ReplayCompleted =
+                        SyncPhaseEvent Following
+                backendInit =
+                    createBackend backendTracer kvOnlyOps slotHash
 
             -- Start in restoration — Runner transitions
             -- to following when atTip=True

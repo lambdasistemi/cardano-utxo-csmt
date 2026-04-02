@@ -86,6 +86,8 @@ import Ouroboros.Network.Point (Block (..), WithOrigin (..))
 data SyncPhase
     = -- | Bulk ingestion, CSMT not built, no queries
       Restoring
+    | -- | MTS journal replay in progress
+      Replaying
     | -- | CSMT built, processing blocks, may be behind
       Following
     | -- | CSMT built, within threshold of tip
@@ -95,6 +97,7 @@ data SyncPhase
 instance ToJSON SyncPhase where
     toJSON = \case
         Restoring -> "restoring"
+        Replaying -> "replaying"
         Following -> "following"
         Synced -> "synced"
 
@@ -106,11 +109,12 @@ instance ToSchema SyncPhase where
             & Swagger.type_ ?~ Swagger.SwaggerString
             & Swagger.enum_
                 ?~ [ "restoring"
+                   , "replaying"
                    , "following"
                    , "synced"
                    ]
             & description
-                ?~ "Current synchronization phase: restoring, following, or synced"
+                ?~ "Current synchronization phase: restoring, replaying, following, or synced"
 
 -- | Maximum slots behind chain tip to be considered synced.
 newtype SyncThreshold = SyncThreshold {unSyncThreshold :: Word64}

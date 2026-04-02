@@ -49,7 +49,7 @@ spec :: Spec
 spec = describe "Metrics.Types" $ do
     describe "SyncPhase" $ do
         it "show produces valid strings" $ do
-            forAll (elements [Restoring, Following, Synced]) $ \phase ->
+            forAll (elements [Restoring, Replaying, Following, Synced]) $ \phase ->
                 show phase `shouldSatisfy` (not . null)
 
         it "Following /= Synced" $ do
