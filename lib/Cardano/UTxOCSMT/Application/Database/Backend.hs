@@ -1,6 +1,7 @@
 module Cardano.UTxOCSMT.Application.Database.Backend
     ( -- * Backend Init
       createBackend
+    , BackendEvent (..)
 
       -- * Re-exports for Application.hs
     , Backend.Init (..)
@@ -52,11 +53,20 @@ import ChainFollower.Rollbacks.Store qualified as Store
 import ChainFollower.Runner qualified as Runner
 import Control.Monad (forM, forM_)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Tracer (Tracer, traceWith)
 import Database.KV.Transaction
     ( Transaction
     , query
     )
 import MTS.Interface qualified as MTS (Mode (..))
+
+-- | Events emitted by the CSMT backend.
+data BackendEvent
+    = -- | MTS journal replay started.
+      ReplayStarted
+    | -- | MTS journal replay completed.
+      ReplayCompleted
+    deriving stock (Show, Eq)
 
 -- | Create the backend Init for UTxO CSMT.
 createBackend
@@ -65,7 +75,8 @@ createBackend
        , MonadFail m
        , MonadIO m
        )
-    => Ops
+    => Tracer IO BackendEvent
+    -> Ops
         'MTS.KVOnly
         m
         cf
@@ -86,7 +97,7 @@ createBackend
         (slot, [Operation key value])
         [Operation key value]
         (hash, Maybe hash)
-createBackend ops slotHash =
+createBackend backendTracer ops slotHash =
     Backend.Init
         { Backend.start =
             pure $ mkRestoring kvCSMTOps
@@ -105,7 +116,9 @@ createBackend ops slotHash =
                             csmtDelete csmtOps k
                     pure $ mkRestoring csmtOps
             , Backend.toFollowing = do
+                liftIO $ traceWith backendTracer ReplayStarted
                 mFull <- liftIO (toFull ops)
+                liftIO $ traceWith backendTracer ReplayCompleted
                 case mFull of
                     Just fullOps ->
                         pure
