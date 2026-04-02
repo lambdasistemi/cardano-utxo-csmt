@@ -142,6 +142,7 @@ spec = describe "Genesis chain sync" $ do
                                     let backendInit =
                                             createBackend
                                                 nullTracer
+                                                nullTracer
                                                 kvOnlyOps
                                                 slotHash
                                     restoring <-

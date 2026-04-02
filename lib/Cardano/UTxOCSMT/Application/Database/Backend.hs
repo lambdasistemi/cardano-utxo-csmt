@@ -2,6 +2,7 @@ module Cardano.UTxOCSMT.Application.Database.Backend
     ( -- * Backend Init
       createBackend
     , BackendEvent (..)
+    , MutationEvent (..)
 
       -- * Re-exports for Application.hs
     , Backend.Init (..)
@@ -68,6 +69,18 @@ data BackendEvent
       ReplayCompleted
     deriving stock (Show, Eq)
 
+-- | Per-mutation trace events.
+data MutationEvent slot key value
+    = -- | Key inserted during restoration.
+      RestoreInsert slot key value
+    | -- | Key deleted during restoration.
+      RestoreDelete slot key
+    | -- | Key inserted during following.
+      FollowInsert slot key value
+    | -- | Key deleted during following.
+      FollowDelete slot key
+    deriving stock (Show, Eq)
+
 -- | Create the backend Init for UTxO CSMT.
 createBackend
     :: ( Ord key
@@ -76,6 +89,7 @@ createBackend
        , MonadIO m
        )
     => Tracer IO BackendEvent
+    -> Tracer IO (MutationEvent slot key value)
     -> Ops
         'MTS.KVOnly
         m
@@ -97,7 +111,7 @@ createBackend
         (slot, [Operation key value])
         [Operation key value]
         (hash, Maybe hash)
-createBackend backendTracer ops slotHash =
+createBackend backendTracer mutationTracer ops slotHash =
     Backend.Init
         { Backend.start =
             pure $ mkRestoring kvCSMTOps
@@ -108,11 +122,19 @@ createBackend backendTracer ops slotHash =
     mkRestoring csmtOps =
         Backend.Restoring
             { Backend.restore =
-                \(_slot, operations) -> do
+                \(slot, operations) -> do
                     forM_ operations $ \case
-                        Insert k v ->
+                        Insert k v -> do
+                            liftIO
+                                $ traceWith
+                                    mutationTracer
+                                    (RestoreInsert slot k v)
                             csmtInsert csmtOps k v
-                        Delete k ->
+                        Delete k -> do
+                            liftIO
+                                $ traceWith
+                                    mutationTracer
+                                    (RestoreDelete slot k)
                             csmtDelete csmtOps k
                     pure $ mkRestoring csmtOps
             , Backend.toFollowing = do
@@ -136,9 +158,17 @@ createBackend backendTracer ops slotHash =
                     invs <-
                         forM operations $ \case
                             Insert k v -> do
+                                liftIO
+                                    $ traceWith
+                                        mutationTracer
+                                        (FollowInsert slot k v)
                                 csmtInsert csmtOps k v
                                 pure [Delete k]
                             Delete k -> do
+                                liftIO
+                                    $ traceWith
+                                        mutationTracer
+                                        (FollowDelete slot k)
                                 mx <- query KVCol k
                                 csmtDelete csmtOps k
                                 case mx of

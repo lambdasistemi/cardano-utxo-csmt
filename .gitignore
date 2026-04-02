@@ -3,6 +3,7 @@ dist-newstyle
 tmp
 secrets
 result
+result-*
 .cabal-fmt*
 testdb
 dev-profile*

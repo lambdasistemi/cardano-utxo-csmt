@@ -429,26 +429,42 @@ test-suite e2e-tests
   type:             exitcode-stdio-1.0
   hs-source-dirs:   e2e-test
   main-is:          main.hs
-  other-modules:    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
+  other-modules:
+    Cardano.UTxOCSMT.E2E.CrashRecoverySpec
+    Cardano.UTxOCSMT.E2E.GenesisChainSyncSpec
+
   build-depends:
+    , async
     , base                                     <5
     , bytestring
+    , cardano-crypto-class
+    , cardano-ledger-allegra
+    , cardano-ledger-api
     , cardano-ledger-byron
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-node-clients
     , cardano-node-clients:devnet
+    , cardano-strict-containers
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
     , chain-follower
+    , containers
     , contra-tracer
     , directory
     , filepath
     , hspec
     , lens
+    , memory
+    , microlens
+    , mts:csmt
     , ouroboros-network-api
     , process
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions
     , stm
     , temporary
+    , text
     , time
     , unix
 

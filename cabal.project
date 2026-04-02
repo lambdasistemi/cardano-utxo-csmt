@@ -43,9 +43,9 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/lambdasistemi/cardano-read-ledger
-  tag: 2a9521e9282e4955f5454847c3f87eb7e7ac1730
-  --sha256: 1hgs2g2ain43jy7m4h36fddwbkij4s18b9l21iya4givnpmmi2l3
+  location: https://github.com/paolino/cardano-read-ledger
+  tag: 890e97e74c38e80fc88544255fae8e35bd785057
+  --sha256: 01aigsa9ph4pq87q07a69drjvckhi2m7wi2331d5wf0fanqal43v
 
 source-repository-package
   type: git
@@ -56,8 +56,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/cardano-node-clients
-  tag: 73287cdd52cdc973daf760c83da38472c73caa8d
-  --sha256: 1w49mgc6lccks0v6sm1018fj3zpgpg1504v7ypgcmv5js82faf31
+  tag: b6f32c517c58c01fbe22d4271a8fc886f2b4f607
+  --sha256: 0b9i5xx0alcnjv7gcd1wi237x4c777x2d0pfb1rpww4gl25w8hwy
 
 source-repository-package
   type: git

@@ -77,7 +77,12 @@ import Control.Concurrent.STM (newTVarIO)
 import Control.Exception (SomeException, catch, displayException)
 import Control.Lens (iso)
 import Control.Monad ((<=<))
-import Control.Tracer (Contravariant (..), Tracer (..), traceWith)
+import Control.Tracer
+    ( Contravariant (..)
+    , Tracer (..)
+    , nullTracer
+    , traceWith
+    )
 import Data.ByteString.Lazy qualified as BL
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import Data.Time.Clock (diffUTCTime)
@@ -256,7 +261,7 @@ main = withUtf8 $ do
                     backendEventToPhase ReplayCompleted =
                         SyncPhaseEvent Following
                 backendInit =
-                    createBackend backendTracer kvOnlyOps slotHash
+                    createBackend backendTracer nullTracer kvOnlyOps slotHash
 
             -- Start in restoration — Runner transitions
             -- to following when atTip=True
