@@ -46,7 +46,7 @@ module Cardano.UTxOCSMT.Application.Metrics.Types
     )
 where
 
-import CSMT.Hashes (Hash)
+import CSMT.Hashes (Hash, renderHash)
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( EventQueueLength (..)
     )
@@ -58,6 +58,7 @@ import Control.Lens
     )
 import Control.Lens.TH (makePrisms)
 import Data.Aeson (ToJSON (..), object, (.=))
+import Data.ByteArray.Encoding (Base (Base16), convertToBase)
 import Data.Proxy (Proxy (..))
 import Data.Swagger
     ( ToSchema (..)
@@ -69,6 +70,7 @@ import Data.Swagger
 import Data.Swagger qualified as Swagger
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8)
 import Data.Time (UTCTime)
 import Data.Tracer.Prometheus
     ( renderPrometheusLines
@@ -244,7 +246,12 @@ instance ToJSON Metrics where
                 , "blockSpeed" .= blockSpeed
                 , "currentEra" .= currentEra
                 , "currentMerkleRoot"
-                    .= fmap (Text.pack . show) currentMerkleRoot
+                    .= fmap
+                        ( decodeUtf8
+                            . convertToBase Base16
+                            . renderHash
+                        )
+                        currentMerkleRoot
                 , "baseCheckpoint"
                     .= fmap (Text.pack . renderPoint) baseCheckpoint
                 , "chainTipSlot" .= fmap unSlotNo chainTipSlot
