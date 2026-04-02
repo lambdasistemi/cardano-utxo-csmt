@@ -60,6 +60,7 @@ import Cardano.UTxOCSMT.Ouroboros.Types
     )
 import ChainFollower.Backend qualified as Backend
 import ChainFollower.Rollbacks.Store qualified as Store
+import ChainFollower.Rollbacks.Types (RollbackPoint (..))
 import ChainFollower.Runner (Phase (..))
 import Control.Concurrent.STM (TVar, atomically, modifyTVar')
 import Control.Exception (throwIO)
@@ -74,7 +75,8 @@ import Data.Tracer.TraceWith
     , pattern TraceWith
     )
 import Data.Void (Void)
-import Database.KV.Transaction (Transaction)
+import Database.KV.Cursor (entryValue, lastEntry)
+import Database.KV.Transaction (Transaction, iterating)
 import Database.RocksDB (BatchOp, ColumnFamily)
 import Ouroboros.Consensus.Block (getHeader)
 import Ouroboros.Network.Block (SlotNo (..))
@@ -312,13 +314,30 @@ follower
                                 (Value fetchedPoint)
                                 (fetchedPoint, ops)
                                 phase
-                        metricTrace $ SyncPhaseEvent $ case phase' of
-                            InRestoration _ -> Restoring
-                            InFollowing _ _
-                                | slotsBehind
-                                    <= unSyncThreshold syncThreshold' ->
-                                    Synced
-                                | otherwise -> Following
+                        let currentSyncPhase = case phase' of
+                                InRestoration _ -> Restoring
+                                InFollowing _ _
+                                    | slotsBehind
+                                        <= unSyncThreshold syncThreshold' ->
+                                        Synced
+                                    | otherwise -> Following
+                        metricTrace $ SyncPhaseEvent currentSyncPhase
+                        -- Emit merkle root when following
+                        case phase' of
+                            InFollowing _ _ -> do
+                                mRp <-
+                                    transact
+                                        $ iterating Rollbacks
+                                        $ fmap entryValue
+                                            <$> lastEntry
+                                case mRp of
+                                    Just rp
+                                        | Just (_h, Just mr) <-
+                                            rpMeta rp ->
+                                            metricTrace
+                                                $ MerkleRootEvent mr
+                                    _ -> pure ()
+                            _ -> pure ()
                         atomically $ modifyTVar' notifyTVar (+ 1)
                         pure $ go phase'
                 , rollBackward = \point -> do
