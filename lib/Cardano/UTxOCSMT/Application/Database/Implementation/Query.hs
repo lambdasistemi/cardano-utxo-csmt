@@ -33,9 +33,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     , ConfigKey (..)
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( pattern UTxORollbackPoint
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunTransaction (..)
     )
@@ -45,17 +42,15 @@ import Cardano.UTxOCSMT.Application.Database.Interface
     , hoistQuery
     )
 import ChainFollower.Rollbacks.Store qualified as Store
+import ChainFollower.Rollbacks.Types (RollbackPoint (..))
 import Control.Lens (Iso', review)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
-import Data.Function (fix)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Word (Word64)
 import Database.KV.Cursor
     ( Entry (..)
     , firstEntry
-    , lastEntry
-    , prevEntry
     )
 import Database.KV.Transaction
     ( Transaction
@@ -116,8 +111,8 @@ mkTransactionedQuery
 mkTransactionedQuery isoK (RunTransaction runTx) =
     hoistQuery runTx (mkQuery isoK)
 
-{- | Get all merkle roots by iterating in reverse over the RollbackPoints table
-Returns a list of (slot, blockHash, merkleRoot) tuples in reverse order (newest first)
+{- | Get all merkle roots from the Runner's rollback column.
+Returns a list of (slot, blockHash, merkleRoot) tuples.
 -}
 getAllMerkleRoots
     :: Monad m
@@ -127,15 +122,13 @@ getAllMerkleRoots
         (Columns slot hash key value)
         op
         [(WithSentinel slot, hash, Maybe hash)]
-getAllMerkleRoots =
-    iterating RollbackPoints $ do
-        ml <- lastEntry
-        ($ ml) $ fix $ \go current -> case current of
-            Nothing -> pure []
-            Just
-                Entry{entryKey, entryValue = UTxORollbackPoint h _ mr} -> do
-                    rest <- prevEntry >>= go
-                    pure $ (entryKey, h, mr) : rest
+getAllMerkleRoots = do
+    history <- Store.queryHistory Rollbacks
+    pure
+        [ (slot, blockHash, merkleRoot)
+        | (slot, rp) <- history
+        , (blockHash, merkleRoot) <- maybe [] pure (rpMeta rp)
+        ]
 
 -- | Get the application configuration
 getAppConfig
