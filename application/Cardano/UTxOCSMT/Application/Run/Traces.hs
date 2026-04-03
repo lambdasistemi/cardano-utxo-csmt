@@ -117,7 +117,7 @@ renderMainTraces (GenesisBootstrap n) =
     "Genesis bootstrap: inserted "
         ++ show n
         ++ " UTxOs from genesis file"
-renderMainTraces (JournalReplay (ReplayStart cs bs tb ops)) =
+renderMainTraces (JournalReplay (ReplayStart cs bs tb ops remaining)) =
     "Journal replay: chunk="
         ++ show cs
         ++ " buckets="
@@ -126,6 +126,8 @@ renderMainTraces (JournalReplay (ReplayStart cs bs tb ops)) =
         ++ show tb
         ++ " ops/bucket="
         ++ show ops
+        ++ " remaining="
+        ++ show remaining
 renderMainTraces (JournalReplay ReplayStop) =
     "Journal replay: chunk done"
 renderMainTraces DbNeedsRecovery =

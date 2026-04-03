@@ -23,6 +23,7 @@ import Cardano.UTxOCSMT.Application.Database.Interface
 import ChainFollower.Rollbacks.Column (RollbackKV)
 import Control.Lens (Prism', prism', type (:~:) (Refl))
 import Data.ByteString (ByteString)
+import Data.ByteString.Char8 qualified as BS8
 import Database.KV.Transaction
     ( Codecs (..)
     , DMap
@@ -33,6 +34,7 @@ import Database.KV.Transaction
     , KV
     , fromList
     )
+import Text.Read (readMaybe)
 
 -- | Single key for application configuration
 data ConfigKey = AppConfigKey
@@ -64,6 +66,9 @@ data Columns slot hash key value x where
     JournalCol
         :: Columns slot hash key value (KV key ByteString)
         -- ^ Journal column for KVOnly mode replay
+    MetricsCol
+        :: Columns slot hash key value (KV ByteString Int)
+        -- ^ Metrics column for journal size counter
     Rollbacks
         :: Columns
             slot
@@ -83,6 +88,7 @@ instance GEq (Columns slot hash key value) where
     geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
     geq JournalCol JournalCol = Just Refl
+    geq MetricsCol MetricsCol = Just Refl
     geq Rollbacks Rollbacks = Just Refl
     geq _ _ = Nothing
 
@@ -100,8 +106,12 @@ instance GCompare (Columns slot hash key value) where
     gcompare ConfigCol ConfigCol = GEQ
     gcompare ConfigCol _ = GLT
     gcompare JournalCol JournalCol = GEQ
+    gcompare JournalCol MetricsCol = GLT
     gcompare JournalCol Rollbacks = GLT
     gcompare JournalCol _ = GGT
+    gcompare MetricsCol MetricsCol = GEQ
+    gcompare MetricsCol Rollbacks = GLT
+    gcompare MetricsCol _ = GGT
     gcompare Rollbacks Rollbacks = GEQ
     gcompare Rollbacks _ = GGT
 
@@ -135,6 +145,14 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
             :=> Codecs
                 { keyCodec = keyP
                 , valueCodec = prism' id Just
+                }
+        , MetricsCol
+            :=> Codecs
+                { keyCodec = prism' id Just
+                , valueCodec =
+                    prism'
+                        (BS8.pack . show)
+                        (readMaybe . BS8.unpack)
                 }
         , Rollbacks
             :=> Codecs
