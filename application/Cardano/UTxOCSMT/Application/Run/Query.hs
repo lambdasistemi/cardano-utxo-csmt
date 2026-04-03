@@ -1,6 +1,7 @@
 module Cardano.UTxOCSMT.Application.Run.Query
     ( queryMerkleRoots
     , queryInclusionProof
+    , queryExclusionProof
     , queryUTxOsByAddress
     , mkReadyResponse
     , queryAwaitValue
@@ -22,6 +23,11 @@ import CSMT.Hashes
     ( Hash
     , generateInclusionProof
     , renderHash
+    )
+import CSMT.Interface (FromKV (..))
+import CSMT.Proof.Exclusion
+    ( buildExclusionProof
+    , verifyExclusionProof
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
@@ -68,6 +74,7 @@ import Control.Concurrent.STM
     , readTVarIO
     , retry
     )
+import Control.Lens (view)
 import Control.Monad (when)
 import Data.ByteArray.Encoding
     ( Base (..)
@@ -155,6 +162,44 @@ queryInclusionProof (RunTransaction runTx) txIdText txIx = do
                         Text.decodeUtf8 $ convertToBase Base16 proof'
                     , proofMerkleRoot = merkleText
                     }
+  where
+    txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx
+
+{- | Query an exclusion proof for a UTxO.
+
+Returns 'True' if the key is NOT in the tree (exclusion
+proof found and verified). Returns 'False' if the key
+IS in the tree.
+-}
+queryExclusionProof
+    :: RunTransaction
+        ColumnFamily
+        BatchOp
+        Point
+        Hash
+        LazyByteString
+        LazyByteString
+        IO
+    -> Text
+    -- ^ Transaction ID in base16 encoding
+    -> Word16
+    -- ^ Transaction output index
+    -> IO Bool
+queryExclusionProof (RunTransaction runTx) txIdText txIx =
+    runTx $ do
+        let CSMTContext{fromKV, hashing} = context
+            FromKV{isoK = iso', treePrefix = pfx} = fromKV
+            baseKey = view iso' txIn
+        -- Try to look up the value to get the full tree key
+        -- (with prefix). If no value exists, use the base key.
+        mVal <- query KVCol txIn
+        let treeKey = case mVal of
+                Just v -> pfx v <> baseKey
+                Nothing -> baseKey
+        mProof <- buildExclusionProof [] CSMTCol hashing treeKey
+        pure $ case mProof of
+            Nothing -> False
+            Just proof -> verifyExclusionProof hashing proof
   where
     txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx
 
