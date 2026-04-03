@@ -16,7 +16,7 @@ jobs:
     name: Build Gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -40,7 +40,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -52,28 +52,28 @@ jobs:
       - name: Build docker image
         run: nix build .#docker-image -o output-docker-image --quiet
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cardano-utxo-image
           path: output-docker-image
       - name: Build AppImage
         run: nix bundle --bundler github:ralismark/nix-appimage .#cardano-utxo -o cardano-utxo.AppImage --quiet
       - name: Upload appImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cardano-utxo-appImage
           path: cardano-utxo.AppImage
       - name: Build rpm artifact
         run: nix bundle --bundler github:NixOS/bundlers#toRPM .#cardano-utxo -o cardano-utxo.rpm --quiet
       - name: Upload rpm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cardano-utxo-rpm
           path: cardano-utxo.rpm
       - name: Build deb artifact
         run: nix bundle --bundler github:NixOS/bundlers#toDEB .#cardano-utxo -o cardano-utxo.deb --quiet
       - name: Upload deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: cardano-utxo-deb
           path: cardano-utxo.deb
@@ -86,7 +86,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -98,7 +98,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -110,7 +110,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -122,7 +122,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -139,7 +139,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -151,7 +151,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -164,7 +164,7 @@ jobs:
     needs: build-gate
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -187,9 +187,9 @@ jobs:
     env:
       PATH: /run/current-system/sw/bin:/usr/bin:/bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download docker image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: cardano-utxo-image
           path: output-docker-image
@@ -218,9 +218,9 @@ jobs:
     env:
       PATH: /run/current-system/sw/bin:/usr/bin:/bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Download docker image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: cardano-utxo-image
           path: output-docker-image
