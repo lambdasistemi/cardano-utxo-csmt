@@ -71,7 +71,8 @@ import Cardano.UTxOCSMT.Application.Run.Config
     , withRocksDB
     )
 import Cardano.UTxOCSMT.Application.Run.Query
-    ( queryInclusionProof
+    ( queryExclusionProof
+    , queryInclusionProof
     )
 import Cardano.UTxOCSMT.Application.Run.Setup
     ( SetupResult (..)
@@ -90,7 +91,7 @@ import Control.Concurrent.STM
     , tryPutTMVar
     )
 import Control.Lens (iso)
-import Control.Monad (void, when)
+import Control.Monad (forM_, void, when)
 import Control.Tracer
     ( Tracer (..)
     , nullTracer
@@ -556,13 +557,64 @@ killAndVerify targetPhase restoreDelay replayDelay syncThresh' = do
                         ++ show root
                 root `shouldSatisfy` (/= Nothing)
 
-                let lastTxId = last txIds
-                proof <-
-                    queryInclusionProof
-                        runner
-                        (txIdHex lastTxId)
-                        0
+                -- Verify ALL UTxOs:
+                -- Each tx has outputs 0-9 (extra) + last (change)
+                -- Change is spent by next tx, except last tx
+                let
+                    -- Unspent: all extra outputs (0-9) from every tx
+                    -- + change output of last tx
+                    unspent =
+                        [ (txIdHex tid, ix)
+                        | tid <- txIds
+                        , ix <- [0 .. 9]
+                        ]
+                            ++ [(txIdHex (last txIds), 10)]
+                    -- Spent: change output (10) of every tx except last
+                    spent =
+                        [ (txIdHex tid, 10)
+                        | tid <- init txIds
+                        ]
+
+                -- All unspent UTxOs must have inclusion proofs
                 putStrLn
-                    $ "Proof after restart: "
-                        ++ show (fmap (const ("present" :: String)) proof)
-                proof `shouldSatisfy` (/= Nothing)
+                    $ "Checking "
+                        ++ show (length unspent)
+                        ++ " inclusion proofs..."
+                forM_ unspent $ \(tid, ix) -> do
+                    proof <-
+                        queryInclusionProof
+                            runner
+                            tid
+                            ix
+                    case proof of
+                        Nothing ->
+                            error
+                                $ "Inclusion proof failed for "
+                                    ++ show tid
+                                    ++ ":"
+                                    ++ show ix
+                        Just _ -> pure ()
+                putStrLn "All inclusion proofs verified."
+
+                -- All spent UTxOs must have exclusion proofs
+                putStrLn
+                    $ "Checking "
+                        ++ show (length spent)
+                        ++ " exclusion proofs..."
+                forM_ spent $ \(tid, ix) -> do
+                    excluded <-
+                        queryExclusionProof
+                            runner
+                            tid
+                            ix
+                    excluded `shouldBe` True
+                putStrLn "All exclusion proofs verified."
+
+                -- Fabricated TxId must be excluded
+                let fakeTxId = "0000000000000000000000000000000000000000000000000000000000000000"
+                fakeExcluded <-
+                    queryExclusionProof
+                        runner
+                        fakeTxId
+                        0
+                fakeExcluded `shouldBe` True
