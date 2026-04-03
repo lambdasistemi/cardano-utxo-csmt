@@ -171,6 +171,7 @@ openCSMTOps bucketBits chunkSize =
         KVCol
         CSMTCol
         JournalCol
+        MetricsCol
 
 queryMerkleRoot
     :: Monad m

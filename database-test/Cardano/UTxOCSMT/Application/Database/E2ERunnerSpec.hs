@@ -265,6 +265,7 @@ columnFamilies =
     , ("rollbacks", testConfig)
     , ("config", testConfig)
     , ("journal", testConfig)
+    , ("metrics", testConfig)
     , ("rollbacks2", testConfig)
     ]
 
