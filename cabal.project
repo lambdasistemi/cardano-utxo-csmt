@@ -56,8 +56,8 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/lambdasistemi/cardano-node-clients
-  tag: 38201c1e43ba61038c7d3b0e673d812480a44c10
-  --sha256: 0b9i5xx0alcnjv7gcd1wi237x4c777x2d0pfb1rpww4gl25w8hwy
+  tag: 5308254ce44e44ffed0651fc0eb6ef0d5e06b069
+  --sha256: 1hdjw300j6f0imyp07d1sxnv9ym7h7qj4j5lrj5s3mnmrrbvxwb8
 
 source-repository-package
   type: git
