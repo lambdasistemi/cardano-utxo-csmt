@@ -31,6 +31,10 @@ import Cardano.Node.Client.E2E.ChainPopulator
     , PopulatorNext (..)
     , populateChain
     )
+import Cardano.Node.Client.E2E.CrashRecovery
+    ( KillResult (..)
+    , killDuring
+    )
 import Cardano.Node.Client.E2E.Devnet (withCardanoNode)
 import Cardano.Node.Client.E2E.Setup
     ( devnetMagic
@@ -342,20 +346,29 @@ withCsmtApp socketPath metricsTracer backendTracer restoreDelay replayDelay sync
         callback (cancel appThread) runner
 
 {- | Run the CSMT app until synced, then run the
-callback with the runner.
+callback with the runner and the phases observed
+during startup.
 -}
 withCsmtSynced
     :: FilePath
     -> FilePath
-    -> (Runner -> IO a)
+    -> ([SyncPhase] -> Runner -> IO a)
     -> IO a
 withCsmtSynced socketPath dbPath callback = do
     syncedVar <- newEmptyTMVarIO
+    phasesRef <- newIORef ([] :: [SyncPhase])
     let metricsTracer = Tracer $ \case
-            SyncPhaseEvent Synced ->
-                atomically
-                    $ void
-                    $ tryPutTMVar syncedVar ()
+            SyncPhaseEvent phase -> do
+                modifyIORef' phasesRef $ \seen ->
+                    if phase `elem` seen
+                        then seen
+                        else seen ++ [phase]
+                case phase of
+                    Synced ->
+                        atomically
+                            $ void
+                            $ tryPutTMVar syncedVar ()
+                    _ -> pure ()
             _ -> pure ()
     withCsmtApp
         socketPath
@@ -373,7 +386,8 @@ withCsmtSynced socketPath dbPath callback = do
                     $ readTMVar syncedVar
             threadDelay 2_000_000
             kill
-            callback runner
+            phases <- readIORef phasesRef
+            callback phases runner
 
 {- | Start the CSMT app, wait for a specific phase,
 kill it. The DB is left in a crashed state.
@@ -391,45 +405,24 @@ killCsmtDuring
     -> SyncThreshold
     -> FilePath
     -> FilePath
-    -> IO ([SyncPhase], Int)
-killCsmtDuring targetPhase restoreDelay replayDelay syncThresh socketPath dbPath = do
-    phaseVar <- newEmptyTMVarIO
-    seenRef <- newIORef ([] :: [SyncPhase])
-    countRef <- newIORef (0 :: Int)
-    let minEvents = 10 -- wait for at least 10 events
-        metricsTracer = Tracer $ \case
-            SyncPhaseEvent phase -> do
-                modifyIORef' seenRef $ \seen ->
-                    if phase `elem` seen
-                        then seen
-                        else seen ++ [phase]
-                when (phase == targetPhase) $ do
-                    n <-
-                        modifyIORef' countRef (+ 1)
-                            >> readIORef countRef
-                    when (n >= minEvents)
-                        $ atomically
-                        $ void
-                        $ tryPutTMVar phaseVar ()
-            _ -> pure ()
-    withCsmtApp
-        socketPath
-        metricsTracer
-        nullTracer
-        restoreDelay
-        replayDelay
-        syncThresh
-        5
-        dbPath
-        $ \kill _runner -> do
-            _ <-
-                timeout 30_000_000
-                    $ atomically
-                    $ readTMVar phaseVar
-            kill
-    phases <- readIORef seenRef
-    count <- readIORef countRef
-    pure (phases, count)
+    -> IO (KillResult SyncPhase)
+killCsmtDuring targetPhase restoreDelay replayDelay syncThresh socketPath dbPath =
+    killDuring targetPhase $ \phaseTracer callback -> do
+        -- Wire the phase tracer into the metrics tracer
+        let metricsTracer = Tracer $ \case
+                SyncPhaseEvent phase ->
+                    traceWith phaseTracer phase
+                _ -> pure ()
+        withCsmtApp
+            socketPath
+            metricsTracer
+            nullTracer
+            restoreDelay
+            replayDelay
+            syncThresh
+            5
+            dbPath
+            $ \kill _runner -> callback kill
 
 -- * Tests
 
@@ -458,7 +451,7 @@ spec = describe "Crash recovery" $ do
 
             -- Step 2: run CSMT app on same node
             withSystemTempDirectory "e2e-csmt" $ \dbPath ->
-                withCsmtSynced socketPath dbPath $ \runner -> do
+                withCsmtSynced socketPath dbPath $ \_phases runner -> do
                     -- Query merkle root
                     let CSMTContext{hashing = h} = context
                     root <-
@@ -511,7 +504,7 @@ killAndVerify targetPhase restoreDelay replayDelay syncThresh' = do
                 $ "Kill during "
                     ++ show targetPhase
                     ++ "..."
-            (phases, count) <-
+            KillResult{phasesSeen} <-
                 killCsmtDuring
                     targetPhase
                     restoreDelay
@@ -521,32 +514,17 @@ killAndVerify targetPhase restoreDelay replayDelay syncThresh' = do
                     dbPath
             putStrLn
                 $ "Phases seen: "
-                    ++ show phases
-                    ++ ", target events: "
-                    ++ show count
+                    ++ show phasesSeen
 
-            -- Target phase must have been seen
-            targetPhase `elem` phases
-                `shouldBe` True
-            count `shouldSatisfy` (>= 1)
-
-            -- Phase-specific: must not have gone
-            -- beyond the target
-            case targetPhase of
-                Restoring ->
-                    Replaying `elem` phases
-                        `shouldBe` False
-                Replaying ->
-                    Synced `elem` phases
-                        `shouldBe` False
-                Following ->
-                    Synced `elem` phases
-                        `shouldBe` False
-                _ -> pure ()
+            -- Target phase must be the last seen
+            last phasesSeen `shouldBe` targetPhase
 
             -- Restart and verify
             putStrLn "Restarting..."
-            withCsmtSynced socketPath dbPath $ \runner -> do
+            withCsmtSynced socketPath dbPath $ \restartPhases runner -> do
+                putStrLn
+                    $ "Restart phases: "
+                        ++ show restartPhases
                 let CSMTContext{hashing = h} = context
                 root <-
                     transact
