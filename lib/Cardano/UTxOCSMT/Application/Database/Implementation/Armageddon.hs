@@ -93,7 +93,7 @@ cleanup (traceWith -> trace) runTransaction@RunTransaction{transact} armageddonP
         more <-
             transact
                 $ Store.armageddonCleanup
-                    RollbackPoints
+                    Rollbacks
                     (armageddonBatchSize armageddonParams)
         when more batch
     cleanUpBatch runTransaction ConfigCol armageddonParams
@@ -101,7 +101,7 @@ cleanup (traceWith -> trace) runTransaction@RunTransaction{transact} armageddonP
 
 {- | Perform an "armageddon" cleanup of the database
 by deleting all entries in all columns in batches,
-then initialize with Origin in RollbackPoints.
+then initialize with Origin in Rollbacks.
 THIS IS NOT GOING TO RUN ATOMICALLY
 -}
 armageddon
@@ -123,7 +123,7 @@ setup
 setup (traceWith -> trace) (RunTransaction{transact}) armageddonParams = do
     transact
         $ Store.armageddonSetup
-            RollbackPoints
+            Rollbacks
             Sentinel
             (Just (noHash armageddonParams, Nothing))
     trace SetupDone

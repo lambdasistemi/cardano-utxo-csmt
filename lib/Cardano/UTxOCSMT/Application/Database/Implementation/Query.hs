@@ -73,12 +73,12 @@ mkQuery isoK =
     Query
         { getValue = query KVCol
         , getTip = do
-            mt <- Store.queryTip RollbackPoints
+            mt <- Store.queryTip Rollbacks
             case mt of
                 Nothing -> lift $ fail "No tip in rollback points"
                 Just t -> pure t
         , getFinality =
-            iterating RollbackPoints $ do
+            iterating Rollbacks $ do
                 mf <- firstEntry
                 case mf of
                     Nothing -> lift . lift $ fail "No finality point in rollback points"

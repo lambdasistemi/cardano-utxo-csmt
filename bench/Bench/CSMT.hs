@@ -89,11 +89,7 @@ runInsertBench utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTContext{fromKV = fkv, hashing = h} = benchContext
                     CSMTOps{csmtInsert} = mkCSMTOps fkv h
@@ -119,6 +115,17 @@ rocksConfig =
         , prefixLength = Nothing
         , bloomFilter = False
         }
+
+-- | Column families for bench databases.
+columnFamilies :: [(String, Config)]
+columnFamilies =
+    [ ("kv", rocksConfig)
+    , ("csmt", rocksConfig)
+    , ("config", rocksConfig)
+    , ("journal", rocksConfig)
+    , ("metrics", rocksConfig)
+    , ("rollbacks", rocksConfig)
+    ]
 
 -- | Prisms for ByteString keys/values
 benchPrisms :: Prisms () Hash ByteString ByteString
@@ -158,12 +165,7 @@ runKVOnlyInsertBench utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert} =
                         kvOnlyCSMTOps (view strict)
@@ -189,12 +191,7 @@ runKVOnlySmallBatchBench batchSize utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert} =
                         kvOnlyCSMTOps (view strict)
@@ -237,12 +234,7 @@ runKVOnlyInternalTimingBench batchSize utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert} =
                         kvOnlyCSMTOps (view strict)
@@ -293,12 +285,7 @@ runKVOnlyPrePopulatedBench rounds batchSize utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert} =
                         kvOnlyCSMTOps (view strict)
@@ -371,12 +358,7 @@ runRepeatedTransactionsBench rounds utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert} =
                         kvOnlyCSMTOps (view strict)
@@ -445,12 +427,7 @@ runForwardTipStyleBench utxos =
         withDBCF
             tmpDir
             rocksConfig
-            [ ("kv", rocksConfig)
-            , ("csmt", rocksConfig)
-            , ("rollbacks", rocksConfig)
-            , ("config", rocksConfig)
-            , ("journal", rocksConfig)
-            ]
+            columnFamilies
             $ \db -> do
                 let CSMTOps{csmtInsert, csmtDelete} =
                         kvOnlyCSMTOps (view strict)
