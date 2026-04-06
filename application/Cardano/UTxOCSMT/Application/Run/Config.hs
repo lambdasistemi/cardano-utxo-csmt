@@ -79,13 +79,14 @@ import Ouroboros.Network.Point qualified as Network
 
 {- | Open a RocksDB database with the required column families.
 
-The database uses five column families:
+The database uses six column families:
 
   * @kv@ - Key-value store for UTxO data
   * @csmt@ - Compact Sparse Merkle Tree nodes
-  * @rollbacks@ - Rollback points for chain reorganizations
   * @config@ - Application configuration data
   * @journal@ - Journal entries for KVOnly mode replay
+  * @metrics@ - Journal size counter
+  * @rollbacks@ - Rollback points for chain reorganizations
 -}
 withRocksDB
     :: FilePath
@@ -99,11 +100,10 @@ withRocksDB path = do
         config
         [ ("kv", config)
         , ("csmt", config)
-        , ("rollbacks", config)
         , ("config", config)
         , ("journal", config)
         , ("metrics", config)
-        , ("runner-rollbacks", config)
+        , ("rollbacks", config)
         ]
 
 {- | Default RocksDB configuration.

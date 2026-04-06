@@ -200,11 +200,10 @@ columnFamilies :: [(String, Config)]
 columnFamilies =
     [ ("kv", testConfig)
     , ("csmt", testConfig)
-    , ("rollbacks", testConfig)
     , ("config", testConfig)
     , ("journal", testConfig)
     , ("metrics", testConfig)
-    , ("rollbacks2", testConfig)
+    , ("rollbacks", testConfig)
     ]
 
 -- | Build a Following continuation from CSMTOps.

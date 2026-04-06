@@ -11,10 +11,8 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.CSMTCodecs
     ( csmtCBORCodecs
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPointKV
-    , WithSentinel
+    ( WithSentinel
     , rollbackListPrism
-    , rollbackPointPrism
     , withSentinelPrism
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
@@ -57,9 +55,6 @@ data Columns slot hash key value x where
         -- ^ Key-Value column for utxos
     CSMTCol :: Columns slot hash key value (KV Key (Indirect hash))
         -- ^ CSMT column for storing the CSMT of the UTxO set
-    RollbackPoints
-        :: Columns slot hash key value (RollbackPointKV slot hash key value)
-        -- ^ Column for storing rollback points
     ConfigCol
         :: Columns slot hash key value (KV ConfigKey ByteString)
         -- ^ Column for storing serialized application configuration
@@ -80,12 +75,11 @@ data Columns slot hash key value x where
                 [Operation key value]
                 (hash, Maybe hash)
             )
-        -- ^ New rollback column for Runner API
+        -- ^ Rollback column for Runner API
 
 instance GEq (Columns slot hash key value) where
     geq KVCol KVCol = Just Refl
     geq CSMTCol CSMTCol = Just Refl
-    geq RollbackPoints RollbackPoints = Just Refl
     geq ConfigCol ConfigCol = Just Refl
     geq JournalCol JournalCol = Just Refl
     geq MetricsCol MetricsCol = Just Refl
@@ -98,10 +92,6 @@ instance GCompare (Columns slot hash key value) where
     gcompare _ KVCol = GGT
     gcompare CSMTCol CSMTCol = GEQ
     gcompare CSMTCol _ = GLT
-    gcompare RollbackPoints CSMTCol = GGT
-    gcompare RollbackPoints RollbackPoints = GEQ
-    gcompare RollbackPoints _ = GLT
-    gcompare ConfigCol RollbackPoints = GGT
     gcompare ConfigCol CSMTCol = GGT
     gcompare ConfigCol ConfigCol = GEQ
     gcompare ConfigCol _ = GLT
@@ -131,11 +121,6 @@ codecs Prisms{keyP, hashP, slotP, valueP} =
     fromList
         [ KVCol :=> Codecs{keyCodec = keyP, valueCodec = valueP}
         , CSMTCol :=> csmtCBORCodecs hashP
-        , RollbackPoints
-            :=> Codecs
-                { keyCodec = withSentinelPrism slotP
-                , valueCodec = rollbackPointPrism hashP keyP valueP
-                }
         , ConfigCol
             :=> Codecs
                 { keyCodec = configKeyPrism
