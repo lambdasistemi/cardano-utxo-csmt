@@ -188,6 +188,7 @@ library library
     Cardano.UTxOCSMT.Ouroboros.Connection
     Cardano.UTxOCSMT.Ouroboros.ConnectionN2C
     Cardano.UTxOCSMT.Ouroboros.Types
+    Cardano.UTxOCSMT.Signing
 
   build-depends:
     , aeson
@@ -195,6 +196,7 @@ library library
     , base                                     <5
     , bytestring
     , cardano-crypto-class
+    , crypton
     , cardano-crypto-wrapper
     , cardano-data
     , cardano-ledger-alonzo

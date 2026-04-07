@@ -16,6 +16,7 @@ import Cardano.UTxOCSMT.HTTP.API
     , InclusionProofResponse
     , MerkleRootEntry
     , ReadyResponse (..)
+    , SigningKeyResponse
     , UTxOByAddressEntry
     , api
     , docs
@@ -53,8 +54,9 @@ apiServer
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
     -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
+    -> IO (Maybe SigningKeyResponse)
     -> Server API
-apiServer getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
+apiServer getMetrics getMerkleRoots getProof getByAddress getReady getAwait getSigningKey =
     prometheusHandler
         :<|> metricsHandler
         :<|> merkleRootsHandler
@@ -62,6 +64,7 @@ apiServer getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
         :<|> byAddressHandler
         :<|> readyHandler
         :<|> awaitHandler
+        :<|> signingKeyHandler
   where
     metricsHandler = do
         r <- liftIO getMetrics
@@ -104,6 +107,10 @@ apiServer getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
             pure
             r
 
+    signingKeyHandler = do
+        r <- liftIO getSigningKey
+        maybe (throwError err404) pure r
+
 -- | HTTP 408 Request Timeout
 err408 :: ServerError
 err408 =
@@ -122,8 +129,9 @@ apiApp
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
     -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
+    -> IO (Maybe SigningKeyResponse)
     -> Application
-apiApp getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
+apiApp getMetrics getMerkleRoots getProof getByAddress getReady getAwait getSigningKey =
     simpleCors
         $ serve api
         $ apiServer
@@ -133,6 +141,7 @@ apiApp getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
             getByAddress
             getReady
             getAwait
+            getSigningKey
 
 {- | Run the API server on the specified port
 Takes a port number, an IO action that provides the current Metrics,
@@ -148,8 +157,9 @@ runAPIServer
     -> (Text -> IO (Either String [UTxOByAddressEntry]))
     -> IO ReadyResponse
     -> (Text -> Word16 -> Maybe Int -> IO (Maybe AwaitResponse))
+    -> IO (Maybe SigningKeyResponse)
     -> IO ()
-runAPIServer port getMetrics getMerkleRoots getProof getByAddress getReady getAwait =
+runAPIServer port getMetrics getMerkleRoots getProof getByAddress getReady getAwait getSigningKey =
     run (fromIntegral port)
         $ apiApp
             getMetrics
@@ -158,6 +168,7 @@ runAPIServer port getMetrics getMerkleRoots getProof getByAddress getReady getAw
             getByAddress
             getReady
             getAwait
+            getSigningKey
 
 -- | WAI Application for the documentation
 docsApp :: Maybe PortNumber -> Application

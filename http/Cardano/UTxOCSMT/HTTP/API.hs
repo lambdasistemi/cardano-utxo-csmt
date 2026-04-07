@@ -19,6 +19,7 @@ module Cardano.UTxOCSMT.HTTP.API
     , DOCS
     , docs
     , MerkleRootEntry (..)
+    , SigningKeyResponse (..)
     , InclusionProofResponse (..)
     , UTxOByAddressEntry (..)
     , ReadyResponse (..)
@@ -87,6 +88,8 @@ type API =
             :> Capture "txIx" Word16
             :> QueryParam "timeout" Int
             :> Get '[JSON] AwaitResponse
+        :<|> "signing-key"
+            :> Get '[JSON] SigningKeyResponse
 
 -- | Proxy for the API
 api :: Proxy API
@@ -96,6 +99,15 @@ api = Proxy
 data MerkleRootEntry = MerkleRootEntry
     { blockHash :: Hash
     , merkleRoot :: Maybe Hash
+    , signature :: Maybe Text
+    -- ^ Ed25519 signature over @blockHash <> merkleRoot@ (base16)
+    }
+    deriving (Show, Eq)
+
+-- | Public key for verifying merkle root signatures
+newtype SigningKeyResponse = SigningKeyResponse
+    { publicKey :: Text
+    -- ^ Ed25519 public key (base16)
     }
     deriving (Show, Eq)
 
@@ -148,23 +160,33 @@ renderHashBase16 :: Hash -> Text
 renderHashBase16 = Text.decodeUtf8 . convertToBase Base16 . renderHash
 
 instance ToJSON MerkleRootEntry where
-    toJSON MerkleRootEntry{blockHash, merkleRoot} =
+    toJSON MerkleRootEntry{blockHash, merkleRoot, signature} =
         object
-            [ "blockHash" .= renderHashBase16 blockHash
-            , "merkleRoot" .= fmap renderHashBase16 merkleRoot
-            ]
+            $ [ "blockHash" .= renderHashBase16 blockHash
+              , "merkleRoot" .= fmap renderHashBase16 merkleRoot
+              ]
+                <> maybe [] (\s -> ["signature" .= s]) signature
 
 instance FromJSON MerkleRootEntry where
     parseJSON = withObject "MerkleRootEntry" $ \v ->
         MerkleRootEntry
             <$> (v .: "blockHash" >>= parseHashBase16)
             <*> (v .: "merkleRoot" >>= mapM parseHashBase16)
+            <*> v .:? "signature"
       where
         parseHashBase16 :: Text -> Parser Hash
         parseHashBase16 txt =
             case decodeBase16Text txt of
                 Left err -> fail $ "Invalid base16 hash: " ++ err
                 Right h -> return h
+
+instance ToJSON SigningKeyResponse where
+    toJSON SigningKeyResponse{publicKey} =
+        object ["publicKey" .= publicKey]
+
+instance FromJSON SigningKeyResponse where
+    parseJSON = withObject "SigningKeyResponse" $ \v ->
+        SigningKeyResponse <$> v .: "publicKey"
 
 instance ToJSON InclusionProofResponse where
     toJSON
@@ -197,9 +219,24 @@ instance ToSchema MerkleRootEntry where
                 .~ fromList
                     [ ("blockHash", stringSchema)
                     , ("merkleRoot", maybeStringSchema)
+                    , ("signature", maybeStringSchema)
                     ]
             & required .~ ["blockHash", "merkleRoot"]
-            & description ?~ "A merkle root at a given block"
+            & description
+                ?~ "A merkle root at a given block, optionally signed"
+
+instance ToSchema SigningKeyResponse where
+    declareNamedSchema _ = do
+        stringSchema <- declareSchemaRef (Proxy @String)
+        return
+            $ Swagger.NamedSchema (Just "SigningKeyResponse")
+            $ mempty
+            & Swagger.type_ ?~ Swagger.SwaggerObject
+            & properties
+                .~ fromList [("publicKey", stringSchema)]
+            & required .~ ["publicKey"]
+            & description
+                ?~ "Ed25519 public key for verifying merkle root signatures"
 
 instance ToSchema InclusionProofResponse where
     declareNamedSchema _ = do

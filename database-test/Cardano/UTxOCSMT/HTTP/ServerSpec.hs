@@ -369,7 +369,12 @@ queryTestMerkleRoots (RunTransaction runTx) =
   where
     toEntry (slot, RollbackPoint{rpMeta}) = case (slot, rpMeta) of
         (Value _, Just (blockHash, merkleRoot)) ->
-            [MerkleRootEntry{blockHash, merkleRoot}]
+            [ MerkleRootEntry
+                { blockHash
+                , merkleRoot
+                , signature = Nothing
+                }
+            ]
         _ -> []
 
 -- | Query inclusion proof for testing.
@@ -485,7 +490,9 @@ session
     -> IO ReadyResponse
     -> Session b
     -> IO b
-session a b c d e = flip runSession $ apiApp a b c d e (\_ _ _ -> pure Nothing)
+session a b c d e =
+    flip runSession
+        $ apiApp a b c d e (\_ _ _ -> pure Nothing) (pure Nothing)
 
 spec :: Spec
 spec = do

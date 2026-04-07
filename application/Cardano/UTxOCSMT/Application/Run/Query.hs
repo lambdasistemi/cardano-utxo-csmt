@@ -68,6 +68,10 @@ import Cardano.UTxOCSMT.HTTP.Base16
     , unsafeDecodeBase16Text
     )
 import Cardano.UTxOCSMT.Ouroboros.Types (Header, Point)
+import Cardano.UTxOCSMT.Signing
+    ( SigningConfig
+    , signMerkleRoot
+    )
 import Control.Concurrent.STM
     ( TVar
     , atomically
@@ -101,7 +105,9 @@ block hash, and merkle root for each processed block. Results are
 filtered to exclude Origin points.
 -}
 queryMerkleRoots
-    :: RunTransaction
+    :: Maybe SigningConfig
+    -- ^ Signing configuration (Nothing = unsigned)
+    -> RunTransaction
         ColumnFamily
         BatchOp
         Point
@@ -112,15 +118,26 @@ queryMerkleRoots
     -- ^ Database transaction runner
     -> IO [MerkleRootEntry]
     -- ^ List of merkle root entries
-queryMerkleRoots (RunTransaction runTx) =
+queryMerkleRoots mSigning (RunTransaction runTx) =
     runTx $ concatMap toMerkleRootEntry <$> getAllMerkleRoots
   where
-    toMerkleRootEntry (slot, blockHash, merkleRoot) =
+    toMerkleRootEntry (slot, bh, mr) =
         case slot of
             Sentinel -> []
             Value (Network.Point Origin) -> []
             Value (Network.Point (At Block{})) ->
-                [MerkleRootEntry{blockHash, merkleRoot}]
+                [ MerkleRootEntry
+                    { blockHash = bh
+                    , merkleRoot = mr
+                    , signature = do
+                        sc <- mSigning
+                        root <- mr
+                        pure
+                            $ Text.decodeUtf8
+                            $ convertToBase Base16
+                            $ signMerkleRoot sc bh root
+                    }
+                ]
 
 {- | Retrieve the inclusion proof and UTxO value for a transaction input.
 
