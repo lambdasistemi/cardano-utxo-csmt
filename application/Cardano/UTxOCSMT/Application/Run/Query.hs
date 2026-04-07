@@ -24,7 +24,7 @@ import CSMT.Hashes
     , generateInclusionProof
     , renderHash
     )
-import CSMT.Interface (FromKV (..))
+import CSMT.Interface (FromKV (..), root)
 import CSMT.Proof.Exclusion
     ( buildExclusionProof
     , verifyExclusionProof
@@ -196,10 +196,12 @@ queryExclusionProof (RunTransaction runTx) txIdText txIx =
         let treeKey = case mVal of
                 Just v -> pfx v <> baseKey
                 Nothing -> baseKey
-        mProof <- buildExclusionProof [] CSMTCol hashing treeKey
-        pure $ case mProof of
-            Nothing -> False
-            Just proof -> verifyExclusionProof hashing proof
+        mProof <- buildExclusionProof [] CSMTCol treeKey
+        mr <- root hashing CSMTCol []
+        pure $ case (mProof, mr) of
+            (Just proof, Just r) ->
+                verifyExclusionProof hashing r proof
+            _ -> False
   where
     txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx
 
