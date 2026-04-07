@@ -23,6 +23,9 @@ import Cardano.UTxOCSMT.Application.BlockFetch
 import Cardano.UTxOCSMT.Application.Metrics.Types
     ( SyncThreshold (..)
     )
+import Data.ByteArray.Encoding (Base (..), convertFromBase)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.Word (Word16)
 import Network.Socket (PortNumber)
 import OptEnvConf
@@ -90,6 +93,8 @@ data Options = Options
     -- ^ Path to shelley-genesis.json (required for security parameter)
     , byronGenesisFile :: Maybe FilePath
     -- ^ Path to byron-genesis.json for bootstrap from genesis
+    , signingKey :: Maybe ByteString
+    -- ^ Ed25519 secret key for signing merkle roots (base16)
     }
 
 -- | Option to specify a YAML configuration file
@@ -281,6 +286,26 @@ byronGenesisFileOption =
             , option
             ]
 
+signingKeyOption :: Parser (Maybe ByteString)
+signingKeyOption =
+    fmap (>>= decodeHex) . optional
+        $ setting
+            [ long "signing-key"
+            , help
+                "Ed25519 secret key for signing merkle roots \
+                \(32 bytes, base16-encoded). When set, each \
+                \MerkleRootEntry includes a signature."
+            , metavar "HEX"
+            , reader str
+            , option
+            ]
+  where
+    decodeHex :: String -> Maybe ByteString
+    decodeHex s = case convertFromBase Base16 (packBS s) of
+        Left (_ :: String) -> Nothing
+        Right bs -> Just bs
+    packBS = BS.pack . map (fromIntegral . fromEnum)
+
 -- | Main options parser with YAML config file support
 optionsParser :: Parser Options
 optionsParser = withYamlConfig configFileOption optionsParserCore
@@ -300,6 +325,7 @@ optionsParserCore =
         <*> syncThresholdOption
         <*> genesisFileOption
         <*> byronGenesisFileOption
+        <*> signingKeyOption
   where
     mkOptions
         net
@@ -312,7 +338,8 @@ optionsParserCore =
         metrics
         threshold
         genesis
-        byronGenesis =
+        byronGenesis
+        signing =
             Options
                 { network = net
                 , connectionMode = connMode
@@ -325,4 +352,5 @@ optionsParserCore =
                 , syncThreshold = threshold
                 , genesisFile = genesis
                 , byronGenesisFile = byronGenesis
+                , signingKey = signing
                 }
