@@ -84,7 +84,6 @@ library http
     , memory
     , mts:csmt
     , network
-    , ouroboros-network-api
     , servant-server
     , servant-swagger
     , servant-swagger-ui
