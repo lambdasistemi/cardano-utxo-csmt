@@ -23,51 +23,36 @@
             "type": "object"
         },
         "InclusionProofResponse": {
-            "description": "Current inclusion proof and output for the given transaction input.",
+            "description": "Inclusion proof, output, and block hash for the given transaction input.",
             "properties": {
-                "merkleRoot": {
+                "blockHash": {
                     "type": "string"
                 },
                 "proof": {
                     "type": "string"
-                },
-                "txId": {
-                    "type": "string"
-                },
-                "txIx": {
-                    "maximum": 65535,
-                    "minimum": 0,
-                    "type": "integer"
                 },
                 "txOut": {
                     "type": "string"
                 }
             },
             "required": [
-                "txId",
-                "txIx",
                 "txOut",
-                "proof"
+                "proof",
+                "blockHash"
             ],
             "type": "object"
         },
         "MerkleRootEntry": {
-            "description": "A merkle root entry at a given slot",
+            "description": "A merkle root at a given block",
             "properties": {
                 "blockHash": {
                     "type": "string"
                 },
                 "merkleRoot": {
                     "type": "string"
-                },
-                "slotNo": {
-                    "maximum": 1.8446744073709551615e19,
-                    "minimum": 0,
-                    "type": "integer"
                 }
             },
             "required": [
-                "slotNo",
                 "blockHash",
                 "merkleRoot"
             ],

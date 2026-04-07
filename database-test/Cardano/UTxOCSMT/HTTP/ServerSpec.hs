@@ -24,7 +24,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     , RunTransaction (..)
     , mkCSMTOps
     , queryByAddress
-    , queryMerkleRoot
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( Operation (..)
@@ -369,13 +368,8 @@ queryTestMerkleRoots (RunTransaction runTx) =
         pure $ concatMap toEntry (reverse history)
   where
     toEntry (slot, RollbackPoint{rpMeta}) = case (slot, rpMeta) of
-        (Value slotNo, Just (blockHash, merkleRoot)) ->
-            [ MerkleRootEntry
-                { slotNo
-                , blockHash
-                , merkleRoot
-                }
-            ]
+        (Value _, Just (blockHash, merkleRoot)) ->
+            [MerkleRootEntry{blockHash, merkleRoot}]
         _ -> []
 
 -- | Query inclusion proof for testing.
@@ -392,26 +386,31 @@ queryTestInclusionProof
     -> Text
     -> Word16
     -> IO (Maybe InclusionProofResponse)
-queryTestInclusionProof (RunTransaction runTx) actualKey txIdText txIx =
+queryTestInclusionProof (RunTransaction runTx) actualKey _txIdText _txIx =
     runTx $ do
-        let CSMTContext{fromKV = fkv, hashing = h} = testCSMTContext
+        let CSMTContext{fromKV = fkv} = testCSMTContext
         result <-
             generateInclusionProof
                 fkv
                 KVCol
                 CSMTCol
                 actualKey
-        merkle <- queryMerkleRoot h
+        mTip <- Store.queryTip Rollbacks
         pure $ do
             (out, proof') <- result
-            let merkleText = fmap (encodeBase16Text . renderHash) merkle
+            tipSlot <- case mTip of
+                Just (Value sn) -> Just sn
+                _ -> Nothing
             pure
                 InclusionProofResponse
-                    { proofTxId = txIdText
-                    , proofTxIx = txIx
-                    , proofTxOut = encodeBase16 $ BL.toStrict out
+                    { proofTxOut = encodeBase16 $ BL.toStrict out
                     , proofBytes = encodeBase16Text proof'
-                    , proofMerkleRoot = merkleText
+                    , proofBlockHash =
+                        encodeBase16Text
+                            $ renderHash
+                            $ mkHash
+                            $ BC.pack
+                            $ show tipSlot
                     }
 
 prefixedCSMTContext :: CSMTContext Hash BL.ByteString BL.ByteString
@@ -602,15 +601,13 @@ spec = do
                                         defaultRequest{requestMethod = methodGet}
                                         "/merkle-roots"
                             liftIO $ simpleStatus resp `shouldBe` status200
-                            let decoded = eitherDecode $ simpleBody resp
+                            let decoded =
+                                    eitherDecode (simpleBody resp)
+                                        :: Either String [MerkleRootEntry]
                             liftIO $ case decoded of
                                 Left err -> fail $ "JSON decode error: " ++ err
-                                Right entries -> do
+                                Right entries ->
                                     length entries `shouldBe` 2
-                                    slotNo <$> entries
-                                        `shouldBe` [ SlotNo 200
-                                                   , SlotNo 100
-                                                   ]
 
         describe "GET /proof/{txId}/{txIx}" $ do
             it "returns 404 for non-existent UTxO" $ do
@@ -675,10 +672,9 @@ spec = do
                             liftIO $ case decoded of
                                 Left err -> fail $ "JSON decode error: " ++ err
                                 Right proof -> do
-                                    proofTxId proof `shouldBe` testTxId
-                                    proofTxIx proof `shouldBe` testTxIx
                                     proofBytes proof `shouldSatisfy` (not . T.null)
                                     proofTxOut proof `shouldSatisfy` (not . T.null)
+                                    proofBlockHash proof `shouldSatisfy` (not . T.null)
 
         describe "GET /utxos-by-address/:address" $ do
             it "returns empty list for unknown address" $ do

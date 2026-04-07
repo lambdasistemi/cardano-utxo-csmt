@@ -46,7 +46,6 @@ import Data.Text (Text)
 import Data.Text.Encoding qualified as Text
 import Data.Word (Word16, Word64)
 import GHC.IsList (IsList (..))
-import Ouroboros.Network.Block (SlotNo (..))
 import Servant
     ( Capture
     , Get
@@ -93,20 +92,17 @@ type API =
 api :: Proxy API
 api = Proxy
 
--- | Entry for a merkle root at a given slot
+-- | Entry for a merkle root at a given block
 data MerkleRootEntry = MerkleRootEntry
-    { slotNo :: SlotNo
-    , blockHash :: Hash
+    { blockHash :: Hash
     , merkleRoot :: Maybe Hash
     }
     deriving (Show, Eq)
 
 data InclusionProofResponse = InclusionProofResponse
-    { proofTxId :: Text
-    , proofTxIx :: Word16
-    , proofTxOut :: Text
+    { proofTxOut :: Text
     , proofBytes :: Text
-    , proofMerkleRoot :: Maybe Text
+    , proofBlockHash :: Text
     }
     deriving (Show, Eq)
 
@@ -152,17 +148,16 @@ renderHashBase16 :: Hash -> Text
 renderHashBase16 = Text.decodeUtf8 . convertToBase Base16 . renderHash
 
 instance ToJSON MerkleRootEntry where
-    toJSON MerkleRootEntry{slotNo, blockHash, merkleRoot} =
+    toJSON MerkleRootEntry{blockHash, merkleRoot} =
         object
-            [ "slotNo" .= unSlotNo slotNo
-            , "blockHash" .= renderHashBase16 blockHash
+            [ "blockHash" .= renderHashBase16 blockHash
             , "merkleRoot" .= fmap renderHashBase16 merkleRoot
             ]
 
 instance FromJSON MerkleRootEntry where
     parseJSON = withObject "MerkleRootEntry" $ \v ->
-        (MerkleRootEntry . SlotNo <$> (v .: "slotNo"))
-            <*> (v .: "blockHash" >>= parseHashBase16)
+        MerkleRootEntry
+            <$> (v .: "blockHash" >>= parseHashBase16)
             <*> (v .: "merkleRoot" >>= mapM parseHashBase16)
       where
         parseHashBase16 :: Text -> Parser Hash
@@ -174,31 +169,24 @@ instance FromJSON MerkleRootEntry where
 instance ToJSON InclusionProofResponse where
     toJSON
         InclusionProofResponse
-            { proofTxId
-            , proofTxIx
-            , proofTxOut
+            { proofTxOut
             , proofBytes
-            , proofMerkleRoot
+            , proofBlockHash
             } =
             object
-                [ "txId" .= proofTxId
-                , "txIx" .= proofTxIx
-                , "txOut" .= proofTxOut
+                [ "txOut" .= proofTxOut
                 , "proof" .= proofBytes
-                , "merkleRoot" .= proofMerkleRoot
+                , "blockHash" .= proofBlockHash
                 ]
 
 instance FromJSON InclusionProofResponse where
     parseJSON = withObject "InclusionProofResponse" $ \v ->
         InclusionProofResponse
-            <$> v .: "txId"
-            <*> v .: "txIx"
-            <*> v .: "txOut"
+            <$> v .: "txOut"
             <*> v .: "proof"
-            <*> v .: "merkleRoot"
+            <*> v .: "blockHash"
 instance ToSchema MerkleRootEntry where
     declareNamedSchema _ = do
-        word64Schema <- declareSchemaRef (Proxy @Word)
         stringSchema <- declareSchemaRef (Proxy @String)
         maybeStringSchema <- declareSchemaRef (Proxy @(Maybe String))
         return
@@ -207,33 +195,28 @@ instance ToSchema MerkleRootEntry where
             & Swagger.type_ ?~ Swagger.SwaggerObject
             & properties
                 .~ fromList
-                    [ ("slotNo", word64Schema)
-                    , ("blockHash", stringSchema)
+                    [ ("blockHash", stringSchema)
                     , ("merkleRoot", maybeStringSchema)
                     ]
-            & required .~ ["slotNo", "blockHash", "merkleRoot"]
-            & description ?~ "A merkle root entry at a given slot"
+            & required .~ ["blockHash", "merkleRoot"]
+            & description ?~ "A merkle root at a given block"
 
 instance ToSchema InclusionProofResponse where
     declareNamedSchema _ = do
         stringSchema <- declareSchemaRef (Proxy @String)
-        word16Schema <- declareSchemaRef (Proxy @Word16)
-        maybeStringSchema <- declareSchemaRef (Proxy @(Maybe String))
         return
             $ Swagger.NamedSchema (Just "InclusionProofResponse")
             $ mempty
             & Swagger.type_ ?~ Swagger.SwaggerObject
             & properties
                 .~ fromList
-                    [ ("txId", stringSchema)
-                    , ("txIx", word16Schema)
-                    , ("txOut", stringSchema)
+                    [ ("txOut", stringSchema)
                     , ("proof", stringSchema)
-                    , ("merkleRoot", maybeStringSchema)
+                    , ("blockHash", stringSchema)
                     ]
-            & required .~ ["txId", "txIx", "txOut", "proof"]
+            & required .~ ["txOut", "proof", "blockHash"]
             & description
-                ?~ "Current inclusion proof and output for the given transaction input."
+                ?~ "Inclusion proof, output, and block hash for the given transaction input."
 
 -- | Response for the /ready endpoint indicating sync status
 data ReadyResponse = ReadyResponse

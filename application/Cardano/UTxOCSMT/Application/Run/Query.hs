@@ -29,6 +29,7 @@ import CSMT.Proof.Exclusion
     ( buildExclusionProof
     , verifyExclusionProof
     )
+import Cardano.UTxOCSMT.Application.Database.Backend (queryTip)
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     )
@@ -39,7 +40,6 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
     , RunTransaction (..)
     , queryByAddress
-    , queryMerkleRoot
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( WithSentinel (..)
@@ -52,6 +52,7 @@ import Cardano.UTxOCSMT.Application.Metrics
 import Cardano.UTxOCSMT.Application.Run.Config
     ( context
     , hashAddressKey
+    , slotHash
     )
 import Cardano.UTxOCSMT.Application.UTxOs (unsafeMkTxIn)
 import Cardano.UTxOCSMT.HTTP.API
@@ -118,8 +119,8 @@ queryMerkleRoots (RunTransaction runTx) =
         case slot of
             Sentinel -> []
             Value (Network.Point Origin) -> []
-            Value (Network.Point (At (Block slotNo _))) ->
-                [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
+            Value (Network.Point (At Block{})) ->
+                [MerkleRootEntry{blockHash, merkleRoot}]
 
 {- | Retrieve the inclusion proof and UTxO value for a transaction input.
 
@@ -144,23 +145,24 @@ queryInclusionProof
     -- ^ Inclusion proof response, if the UTxO exists
 queryInclusionProof (RunTransaction runTx) txIdText txIx = do
     runTx $ do
-        let CSMTContext{fromKV, hashing} = context
+        let CSMTContext{fromKV} = context
         result <- generateInclusionProof fromKV KVCol CSMTCol txIn
-        merkle <- queryMerkleRoot hashing
+        mTip <- queryTip Rollbacks
         pure $ do
             (out, proof') <- result
-            let merkleText =
-                    fmap
-                        (Text.decodeUtf8 . convertToBase Base16 . renderHash)
-                        merkle
+            bh <- case mTip of
+                Just (Value pt@(Network.Point (At Block{}))) ->
+                    Just (slotHash pt)
+                _ -> Nothing
             pure
                 InclusionProofResponse
-                    { proofTxId = txIdText
-                    , proofTxIx = txIx
-                    , proofTxOut = encodeBase16Text $ toStrict out
+                    { proofTxOut = encodeBase16Text $ toStrict out
                     , proofBytes =
                         Text.decodeUtf8 $ convertToBase Base16 proof'
-                    , proofMerkleRoot = merkleText
+                    , proofBlockHash =
+                        Text.decodeUtf8
+                            $ convertToBase Base16
+                            $ renderHash bh
                     }
   where
     txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx
