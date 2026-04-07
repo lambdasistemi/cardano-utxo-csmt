@@ -69,7 +69,12 @@ import Cardano.UTxOCSMT.Application.Run.Traces
     , renderThrottledMainTraces
     , stealMetricsEvent
     )
+import Cardano.UTxOCSMT.HTTP.API (SigningKeyResponse (..))
 import Cardano.UTxOCSMT.HTTP.Server (runAPIServer, runDocsServer)
+import Cardano.UTxOCSMT.Signing
+    ( parseSigningKey
+    , renderPublicKey
+    )
 import ChainFollower.Backend qualified as Backend
 import ChainFollower.Runner (Phase (..), readCheckpoint)
 import Control.Concurrent.Async (async, link)
@@ -83,8 +88,10 @@ import Control.Tracer
     , nullTracer
     , traceWith
     )
+import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.ByteString.Lazy qualified as BL
 import Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import Data.Text.Encoding qualified as Text
 import Data.Time.Clock (diffUTCTime)
 import Data.Tracer.Fold (foldTracer)
 import Data.Tracer.Intercept (intercept)
@@ -133,11 +140,25 @@ main = withUtf8 $ do
         , logPath
         , apiPort
         , headersQueueSize
+        , signingKey = mSigningKeyBytes
         } <-
         runParser
             version
             "Tracking cardano UTxOs in a CSMT in a rocksDB database"
             optionsParser
+    let mSigningConfig = mSigningKeyBytes >>= parseSigningKey
+        signingKeyResponse =
+            fmap
+                ( \sc ->
+                    SigningKeyResponse
+                        { publicKey =
+                            Text.decodeUtf8
+                                $ convertToBase Base16
+                                $ renderPublicKey sc
+                        }
+                )
+                mSigningConfig
+
     logTracer logPath $ \basicTracer -> do
         let appTracer = basicTracer
 
@@ -233,11 +254,12 @@ main = withUtf8 $ do
                     runAPIServer
                         port
                         (readIORef metricsRef)
-                        (queryMerkleRoots runner)
+                        (queryMerkleRoots mSigningConfig runner)
                         (queryInclusionProof runner)
                         (queryUTxOsByAddress runner)
                         getReadyResponse
                         (queryAwait commitNotify runner)
+                        (pure signingKeyResponse)
 
             SetupResult
                 { setupStartingPoint
