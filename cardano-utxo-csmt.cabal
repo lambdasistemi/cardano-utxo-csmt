@@ -78,6 +78,7 @@ library http
     , aeson
     , aeson-pretty
     , base                       <5
+    , base16-bytestring
     , bytestring
     , cardano-utxo-csmt:library
     , lens

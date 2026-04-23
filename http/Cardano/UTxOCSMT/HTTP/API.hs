@@ -26,7 +26,7 @@ module Cardano.UTxOCSMT.HTTP.API
     )
 where
 
-import CSMT.Hashes (Hash, renderHash)
+import CSMT.Hashes (Hash, parseHash, renderHash)
 import Cardano.UTxOCSMT.Application.Metrics (Metrics)
 import Cardano.UTxOCSMT.HTTP.Base16 (decodeBase16Text)
 import Control.Lens ((&), (.~), (?~))
@@ -164,7 +164,10 @@ instance FromJSON MerkleRootEntry where
         parseHashBase16 txt =
             case decodeBase16Text txt of
                 Left err -> fail $ "Invalid base16 hash: " ++ err
-                Right h -> return h
+                Right bs -> case parseHash bs of
+                    Just h -> return h
+                    Nothing ->
+                        fail "Invalid hash length (expected 32 bytes)"
 
 instance ToJSON InclusionProofResponse where
     toJSON
