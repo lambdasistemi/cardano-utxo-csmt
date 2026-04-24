@@ -1,0 +1,14 @@
+%%{init: {"theme": "dark", "themeVariables": {"edgeLabelBackground": "transparent"}}}%%
+flowchart TD
+    subgraph Trusted Root Publishers
+        CF[Cardano Foundation]
+        IOG[IOG]
+        Emurgo[Emurgo]
+        Mithril[Mithril]
+    end
+    CF --> R1[root of chain-point 'ab453b...']
+    IOG --> R2[root of chain-point 'ab453b...']
+    Emurgo --> R3[root of chain-point 'ab453b...']
+    Mithril --> R4[root of chain-point 'ab453b...']
+    R1 & R2 & R3 & R4 --> V{All match?}
+    V -->|Yes| T[Client accepts valid proofs for the root 'ab453b...']
