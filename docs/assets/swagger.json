@@ -43,12 +43,15 @@
             "type": "object"
         },
         "MerkleRootEntry": {
-            "description": "A merkle root at a given block",
+            "description": "A merkle root at a given block, optionally signed",
             "properties": {
                 "blockHash": {
                     "type": "string"
                 },
                 "merkleRoot": {
+                    "type": "string"
+                },
+                "signature": {
                     "type": "string"
                 }
             },
@@ -234,6 +237,18 @@
             ],
             "type": "object"
         },
+        "SigningKeyResponse": {
+            "description": "Ed25519 public key for verifying merkle root signatures",
+            "properties": {
+                "publicKey": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "publicKey"
+            ],
+            "type": "object"
+        },
         "SyncPhase": {
             "description": "Current synchronization phase: restoring, replaying, following, or synced",
             "enum": [
@@ -404,6 +419,21 @@
                         "description": "",
                         "schema": {
                             "$ref": "#/definitions/ReadyResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/signing-key": {
+            "get": {
+                "produces": [
+                    "application/json;charset=utf-8"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/SigningKeyResponse"
                         }
                     }
                 }
