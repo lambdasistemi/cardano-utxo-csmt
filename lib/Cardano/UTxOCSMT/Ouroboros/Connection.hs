@@ -16,6 +16,13 @@ module Cardano.UTxOCSMT.Ouroboros.Connection
 where
 
 import Cardano.Chain.Slotting (EpochSlots)
+import Cardano.Network.NodeToNode
+    ( DiffusionMode (InitiatorOnlyDiffusionMode)
+    , NodeToNodeVersion (NodeToNodeV_14)
+    , NodeToNodeVersionData (..)
+    , nodeToNodeCodecCBORTerm
+    , nodeToNodeHandshakeCodec
+    )
 import Cardano.UTxOCSMT.Application.BlockFetch
     ( BlockFetchApplication
     )
@@ -46,16 +53,9 @@ import Ouroboros.Network.Diffusion.Configuration
     )
 import Ouroboros.Network.IOManager (withIOManager)
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.NodeToNode
-    ( DiffusionMode (InitiatorOnlyDiffusionMode)
-    , NodeToNodeVersion (NodeToNodeV_14)
-    , NodeToNodeVersionData (..)
-    , nodeToNodeCodecCBORTerm
-    )
 import Ouroboros.Network.Protocol.Handshake.Codec
     ( cborTermVersionDataCodec
     , noTimeLimitsHandshake
-    , nodeToNodeHandshakeCodec
     )
 import Ouroboros.Network.Protocol.Handshake.Version
     ( Acceptable (acceptableVersion)

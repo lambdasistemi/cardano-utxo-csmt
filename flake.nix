@@ -13,7 +13,7 @@
     mkdocs.url = "github:paolino/dev-assets?dir=mkdocs";
     asciinema.url = "github:paolino/dev-assets?dir=asciinema";
     cardano-cli.url = "github:IntersectMBO/cardano-cli";
-    cardano-node.url = "github:IntersectMBO/cardano-node/10.5.4";
+    cardano-node.url = "github:IntersectMBO/cardano-node/10.7.1";
     iohkNix = {
       url = "github:input-output-hk/iohk-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -42,7 +42,7 @@
               inherit system;
             };
             project = import ./nix/project.nix {
-              indexState = "2025-12-07T00:00:00Z";
+              indexState = "2026-04-17T00:00:00Z";
               inherit CHaP;
               inherit pkgs;
               cardano-cli = cardano-cli.packages.${system};

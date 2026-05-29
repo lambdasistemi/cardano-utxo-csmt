@@ -1,8 +1,32 @@
 services:
   cardano-node:
-    image: ghcr.io/paolino/cardano-node-clients/devnet:10.5.4
+    image: ghcr.io/intersectmbo/cardano-node:10.7.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        rm -rf /data/genesis /data/db /data/node.sock
+        mkdir -p /data/genesis /data/db
+        cp -R /genesis/. /data/genesis/
+        chmod 600 /data/genesis/delegate-keys/*
+        start_time=$$(date -u -d "+2 seconds" +%Y-%m-%dT%H:%M:%SZ)
+        start_epoch=$$(date -u -d "$$start_time" +%s)
+        jq --arg start_time "$$start_time" '.systemStart = $$start_time' /data/genesis/shelley-genesis.json > /tmp/shelley-genesis.json
+        jq --argjson start_epoch "$$start_epoch" '.startTime = $$start_epoch' /data/genesis/byron-genesis.json > /tmp/byron-genesis.json
+        mv /tmp/shelley-genesis.json /data/genesis/shelley-genesis.json
+        mv /tmp/byron-genesis.json /data/genesis/byron-genesis.json
+        exec /usr/local/bin/cardano-node run \
+          --config /data/genesis/node-config.json \
+          --topology /data/genesis/topology.json \
+          --database-path /data/db \
+          --socket-path /data/node.sock \
+          --host-addr 0.0.0.0 \
+          --port 3001 \
+          --shelley-kes-key /data/genesis/delegate-keys/delegate1.kes.skey \
+          --shelley-vrf-key /data/genesis/delegate-keys/delegate1.vrf.skey \
+          --shelley-operational-certificate /data/genesis/delegate-keys/delegate1.opcert
     volumes:
       - node-data:/data
+      - ../e2e-test/genesis:/genesis:ro
     healthcheck:
       test: ["CMD", "test", "-S", "/data/node.sock"]
       interval: 5s
@@ -48,7 +72,7 @@ services:
             echo "E2E TEST PASSED"
             exit 0
           fi
-          echo "  attempt $i/60 - not ready yet"
+          echo "  attempt $$i/60 - not ready yet"
           sleep 5
         done
         echo "E2E TEST FAILED - API never became ready"

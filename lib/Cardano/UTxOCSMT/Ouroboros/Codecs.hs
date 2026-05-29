@@ -98,6 +98,7 @@ ccfg es =
         ShelleyCodecConfig
         ShelleyCodecConfig
         ShelleyCodecConfig
+        ShelleyCodecConfig
 
 --- Encoding and Decoding Points -----
 encPoint :: Point -> Encoding

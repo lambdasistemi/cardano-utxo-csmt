@@ -3,7 +3,7 @@ Module      : Cardano.UTxOCSMT.Application.UTxOs
 Description : UTxO extraction from Cardano blocks
 
 This module extracts UTxO changes (spends and creates) from Cardano blocks
-across all eras (Byron through Conway). Each transaction produces:
+across all eras (Byron through Dijkstra). Each transaction produces:
 
 * 'Spend' entries for consumed inputs
 * 'Create' entries for new outputs
@@ -116,6 +116,7 @@ scriptIsValid tx = case theEra @era of
     Alonzo -> check tx
     Babbage -> check tx
     Conway -> check tx
+    Dijkstra -> check tx
   where
     check t = case getEraScriptValidity t of
         ScriptValidity (IsValid v) -> v
@@ -177,6 +178,21 @@ invalidChanges tx = case theEra @era of
                     ]
                 SNothing -> []
         in  inputs ++ outputs
+    -- Dijkstra: collateral consumed, collateral return created
+    Dijkstra ->
+        let CollateralInputs colIns = getEraCollateralInputs tx
+            CollateralOutputs mReturn = getEraCollateralOutputs tx
+            Outputs outs = getEraOutputs tx
+            returnIdx = fromIntegral (length outs) :: Word16
+            inputs = Spend . cborEncode <$> toList colIns
+            outputs = case mReturn of
+                SJust returnOut ->
+                    [ Create
+                        (mkTxIn tx returnIdx)
+                        (cborEncode returnOut)
+                    ]
+                SNothing -> []
+        in  inputs ++ outputs
 
 mkCreate :: IsEra era => Tx era -> Word16 -> ByteString -> Change
 mkCreate tx index = Create (mkTxIn tx index)
@@ -205,6 +221,7 @@ mkTxIn tx index = case theEra @era of
     Alonzo -> mkShelleyTxIn index $ unTxId $ getEraTxId tx
     Babbage -> mkShelleyTxIn index $ unTxId $ getEraTxId tx
     Conway -> mkShelleyTxIn index $ unTxId $ getEraTxId tx
+    Dijkstra -> mkShelleyTxIn index $ unTxId $ getEraTxId tx
 
 mkShelleyTxIn :: Word16 -> Shelley.TxId -> ByteString
 mkShelleyTxIn index h =
@@ -229,6 +246,7 @@ extractInputs (Inputs ins) = case theEra @era of
     Alonzo -> cborEncode <$> toList ins
     Babbage -> cborEncode <$> toList ins
     Conway -> cborEncode <$> toList ins
+    Dijkstra -> cborEncode <$> toList ins
 
 cborEncode :: EncCBOR a => a -> ByteString
 cborEncode = serialize (natVersion @11)
@@ -242,10 +260,11 @@ _txs (Tx tx) = case theEra @era of
     Alonzo -> cborEncode tx
     Babbage -> cborEncode tx
     Conway -> cborEncode tx
+    Dijkstra -> cborEncode tx
 
-{- | Extract outputs, projecting all eras to @BabbageTxOut ConwayEra@ before
-CBOR encoding. This ensures 'addressPrefix' in Config.hs always sees a
-Conway-era TxOut, regardless of the originating era.
+{- | Extract outputs, projecting eras through Conway to @BabbageTxOut ConwayEra@
+before CBOR encoding. This ensures 'addressPrefix' in Config.hs sees a
+Conway-era TxOut for historical eras.
 -}
 {-# INLINEABLE extractOutputs #-}
 extractOutputs
@@ -284,6 +303,8 @@ extractOutputs (Outputs outs) = case theEra @era of
             . upgradeTxOut
             <$> toList outs
     Conway ->
+        cborEncode <$> toList outs
+    Dijkstra ->
         cborEncode <$> toList outs
 
 -- | Convert a Byron TxOut to a Conway-era TxOut.
