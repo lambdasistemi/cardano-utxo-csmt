@@ -33,7 +33,6 @@ import Cardano.Ledger.BaseTypes
     , StrictMaybe (SJust, SNothing)
     )
 
-import Cardano.Node.Client.Balance (balanceTx)
 import Cardano.Node.Client.E2E.Setup
     ( addKeyWitness
     , genesisAddr
@@ -53,6 +52,7 @@ import Cardano.Node.Client.Submitter
     ( SubmitResult (..)
     , Submitter (..)
     )
+import Cardano.Tx.Balance (BalanceResult (..), balanceTx)
 
 spec :: Spec
 spec =
@@ -94,6 +94,7 @@ spec =
                             case balanceTx
                                 pp
                                 [feeUtxo]
+                                []
                                 genesisAddr
                                 tx of
                                 Left err ->
@@ -102,12 +103,12 @@ spec =
                                           \failed: "
                                             <> show
                                                 err
-                                Right balanced ->
+                                Right BalanceResult{balancedTx} ->
                                     do
                                         let signed =
                                                 addKeyWitness
                                                     genesisSignKey
-                                                    balanced
+                                                    balancedTx
                                         result <-
                                             submitTx
                                                 submitter

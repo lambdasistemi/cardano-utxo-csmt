@@ -13,6 +13,13 @@ module Cardano.UTxOCSMT.Ouroboros.ConnectionN2C
     ) where
 
 import Cardano.Chain.Slotting (EpochSlots)
+import Cardano.Network.NodeToClient
+    ( NodeToClientVersion (..)
+    , NodeToClientVersionData (..)
+    , connectTo
+    , localSnocket
+    , nullNetworkConnectTracers
+    )
 import Cardano.UTxOCSMT.Ouroboros.Codecs (codecChainSyncN2C)
 import Cardano.UTxOCSMT.Ouroboros.Types (N2CChainSyncApplication)
 import Control.Exception (SomeException)
@@ -34,15 +41,6 @@ import Ouroboros.Network.Mux
     , RunMiniProtocol (InitiatorProtocolOnly)
     , StartOnDemandOrEagerly (StartOnDemand)
     , mkMiniProtocolCbFromPeer
-    )
-import Ouroboros.Network.NodeToClient
-    ( connectTo
-    , localSnocket
-    , nullNetworkConnectTracers
-    )
-import Ouroboros.Network.NodeToClient.Version
-    ( NodeToClientVersion (..)
-    , NodeToClientVersionData (..)
     )
 import Ouroboros.Network.Protocol.ChainSync.Client qualified as ChainSync
 import Ouroboros.Network.Protocol.Handshake.Version

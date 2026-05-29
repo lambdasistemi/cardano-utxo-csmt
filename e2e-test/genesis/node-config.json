@@ -2,6 +2,7 @@
     "AlonzoGenesisFile": "alonzo-genesis.json",
     "ByronGenesisFile": "byron-genesis.json",
     "ConwayGenesisFile": "conway-genesis.json",
+    "DijkstraGenesisFile": "dijkstra-genesis.json",
     "ShelleyGenesisFile": "shelley-genesis.json",
     "EnableP2P": false,
     "ExperimentalHardForksEnabled": true,

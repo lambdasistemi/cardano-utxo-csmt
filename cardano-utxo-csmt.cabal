@@ -135,6 +135,7 @@ library application
     , containers
     , contra-tracer
     , contra-tracer-contrib
+    , io-classes:strict-stm
     , lens
     , memory
     , mtl
@@ -143,11 +144,10 @@ library application
     , network
     , opt-env-conf
     , ouroboros-consensus
-    , ouroboros-network-api
+    , ouroboros-network:api
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions
     , stm
-    , strict-stm
     , text
     , time
     , with-utf8
@@ -198,6 +198,7 @@ library library
     , cardano-crypto-class
     , cardano-crypto-wrapper
     , cardano-data
+    , cardano-diffusion
     , cardano-ledger-alonzo
     , cardano-ledger-api
     , cardano-ledger-babbage
@@ -205,9 +206,9 @@ library library
     , cardano-ledger-byron
     , cardano-ledger-conway
     , cardano-ledger-core
+    , cardano-ledger-read
     , cardano-ledger-shelley
     , cardano-node-clients
-    , cardano-read-ledger
     , cardano-strict-containers
     , cborg
     , chain-follower
@@ -216,6 +217,7 @@ library library
     , contra-tracer-contrib
     , exceptions
     , foldl
+    , io-classes:strict-stm
     , lens
     , memory
     , mtl
@@ -225,12 +227,12 @@ library library
     , network-mux
     , opt-env-conf
     , ouroboros-consensus
-    , ouroboros-consensus-cardano
-    , ouroboros-consensus-protocol
+    , ouroboros-consensus:cardano
+    , ouroboros-consensus:protocol
     , ouroboros-network
-    , ouroboros-network-api
-    , ouroboros-network-framework
-    , ouroboros-network-protocols
+    , ouroboros-network:api
+    , ouroboros-network:framework
+    , ouroboros-network:protocols
     , path
     , profunctors
     , QuickCheck
@@ -239,7 +241,6 @@ library library
     , rocksdb-kv-transactions:kv-transactions
     , serialise
     , strict-sop-core
-    , strict-stm
     , swagger2
     , text
     , time
@@ -313,7 +314,7 @@ test-suite unit-tests
     , hspec
     , lens
     , opt-env-conf
-    , ouroboros-network-api
+    , ouroboros-network:api
     , QuickCheck
     , stm
     , text
@@ -367,7 +368,7 @@ test-suite database-tests
     , mempack
     , mts
     , mts:csmt
-    , ouroboros-network-api
+    , ouroboros-network:api
     , path
     , QuickCheck
     , rocksdb-haskell-jprupp
@@ -405,12 +406,13 @@ test-suite cardano-utxo-csmt-integration-test
     , cardano-ledger-core
     , cardano-node-clients
     , cardano-node-clients:devnet
+    , cardano-tx-tools
     , containers
     , directory
     , filepath
     , hspec
     , microlens
-    , ouroboros-network-api
+    , ouroboros-network:api
     , process
     , time
     , unix
@@ -446,6 +448,7 @@ test-suite e2e-tests
     , cardano-node-clients
     , cardano-node-clients:devnet
     , cardano-strict-containers
+    , cardano-tx-tools
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
     , chain-follower
@@ -458,7 +461,7 @@ test-suite e2e-tests
     , memory
     , microlens
     , mts:csmt
-    , ouroboros-network-api
+    , ouroboros-network:api
     , process
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions:kv-transactions

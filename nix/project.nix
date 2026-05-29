@@ -19,10 +19,13 @@ let
       hlint = indexTool;
       implicit-hie = indexTool;
     };
-    withHoogle = true;
+    withHoogle = false;
     buildInputs = [
       pkgs.just
+      pkgs.liburing
+      pkgs.lmdb
       pkgs.nixfmt-classic
+      pkgs.pkg-config
       pkgs.shellcheck
       pkgs.zstd
       pkgs.mkdocs

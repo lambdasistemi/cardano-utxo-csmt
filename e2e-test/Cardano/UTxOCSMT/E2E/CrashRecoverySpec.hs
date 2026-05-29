@@ -17,7 +17,7 @@ module Cardano.UTxOCSMT.E2E.CrashRecoverySpec
 import CSMT.Hashes (Hash)
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Crypto.Hash (hashToBytes)
-import Cardano.Ledger.Api.Tx (Tx, bodyTxL, mkBasicTx, txIdTx)
+import Cardano.Ledger.Api.Tx (bodyTxL, mkBasicTx, txIdTx)
 import Cardano.Ledger.Api.Tx.Body (mkBasicTxBody, outputsTxBodyL)
 import Cardano.Ledger.Api.Tx.Out (TxOut, mkBasicTxOut)
 import Cardano.Ledger.BaseTypes (Inject (..))
@@ -25,7 +25,6 @@ import Cardano.Ledger.Coin (Coin (..))
 import Cardano.Ledger.Conway (ConwayEra)
 import Cardano.Ledger.Core (PParams, extractHash)
 import Cardano.Ledger.TxIn (TxId (..), TxIn, mkTxInPartial)
-import Cardano.Node.Client.Balance (balanceTx)
 import Cardano.Node.Client.E2E.ChainPopulator
     ( ChainPopulator (..)
     , PopulatorNext (..)
@@ -42,6 +41,8 @@ import Cardano.Node.Client.E2E.Setup
     , genesisSignKey
     )
 import Cardano.Node.Client.Types (Block)
+import Cardano.Tx.Balance (BalanceResult (..), balanceTx)
+import Cardano.Tx.Ledger (ConwayTx)
 import Cardano.UTxOCSMT.Application.Database.Backend
     ( BackendEvent (..)
     , createBackend
@@ -133,7 +134,7 @@ shelleyGenesisPath = genesisDir </> "shelley-genesis.json"
 
 -- | Get change output from a balanced tx.
 changeOutput
-    :: Tx ConwayEra -> (TxIn, TxOut ConwayEra)
+    :: ConwayTx -> (TxIn, TxOut ConwayEra)
 changeOutput tx =
     let outs = toList (tx ^. bodyTxL . outputsTxBodyL)
         lastIdx = length outs - 1
@@ -150,7 +151,7 @@ buildTxChain
     :: PParams ConwayEra
     -> (TxIn, TxOut ConwayEra)
     -> Int
-    -> ([Tx ConwayEra], (TxIn, TxOut ConwayEra))
+    -> ([ConwayTx], (TxIn, TxOut ConwayEra))
 buildTxChain _ utxo 0 = ([], utxo)
 buildTxChain pp utxo n =
     let extraOutputs =
@@ -164,16 +165,16 @@ buildTxChain pp utxo n =
             mkBasicTxBody
                 & outputsTxBodyL .~ extraOutputs
         tx = mkBasicTx body
-    in  case balanceTx pp [utxo] genesisAddr tx of
+    in  case balanceTx pp [utxo] [] genesisAddr tx of
             Left err ->
                 error $ "buildTxChain: " <> show err
-            Right balanced ->
+            Right BalanceResult{balancedTx} ->
                 let (rest, final') =
                         buildTxChain
                             pp
-                            (changeOutput balanced)
+                            (changeOutput balancedTx)
                             (n - 1)
-                in  (balanced : rest, final')
+                in  (balancedTx : rest, final')
 
 -- | Render a TxId as hex text.
 txIdHex :: TxId -> Text
