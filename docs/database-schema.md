@@ -1,8 +1,8 @@
 # Database Schema
 
-The application stores data in RocksDB using four column families.
-All structured values are CBOR-encoded. The schema below is specified
-in [CDDL](https://www.rfc-editor.org/rfc/rfc8610) (RFC 8610).
+The application opens six RocksDB column families. The four below carry
+the persistent state; the structured values are CBOR-encoded and
+specified in [CDDL](https://www.rfc-editor.org/rfc/rfc8610) (RFC 8610).
 
 ## Column Families
 
@@ -12,6 +12,14 @@ in [CDDL](https://www.rfc-editor.org/rfc/rfc8610) (RFC 8610).
 | `csmt` | [Key](#key) | [Indirect](#indirect) |
 | `rollbacks` | [WithSentinel](#withsentinel) | [RollbackPoint](#rollbackpoint) |
 | `config` | UTF-8 literal `"app_config"` | Serialise-encoded tuple |
+
+Two further column families support crash recovery during bulk replay
+(KVOnly mode) and are not part of the persisted query state:
+
+| Column Family | Key | Value |
+|---------------|-----|-------|
+| `journal` | raw bytes (UTxO reference) | raw bytes (pending entry) |
+| `metrics` | counter name | decimal-string journal size counter |
 
 ## CDDL
 

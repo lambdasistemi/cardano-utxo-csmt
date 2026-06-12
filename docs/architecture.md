@@ -13,11 +13,12 @@ flowchart LR
     subgraph Service [UTxO CSMT Service]
         CS_C[ChainSync Client]
         BF_C[BlockFetch Client]
-        HTTP[HTTP Server<br>/metrics<br>/proof/:id<br>/merkle-roots]
+        HTTP["HTTP Server<br>/ready /metrics<br>/merkle-roots /proof<br>/utxos-by-address /await"]
         subgraph DB [Database — RocksDB]
-            UTxOs
+            KV[kv: UTxOs]
             CSMT
-            Rollbacks[Rollback Points]
+            Rollbacks
+            Internal[config / journal / metrics]
         end
     end
     Client[HTTP Client]
@@ -29,17 +30,29 @@ flowchart LR
     Client --> HTTP
 ```
 
+The diagram shows **node-to-node** mode, where a ChainSync client follows
+headers and a BlockFetch client retrieves full blocks. In
+**node-to-client** mode (`--socket-path`) a single ChainSync client
+streams full blocks over a Unix socket and no separate BlockFetch client
+is used; everything downstream of block arrival is identical.
+
 ## Components
 
 ### Chain Synchronization
 
-The service connects to a Cardano node using the node-to-node protocol:
+The service connects to a Cardano node in one of two modes, selected by
+the command-line options:
 
-- **ChainSync Client**: Follows the chain tip, receiving block headers
-- **BlockFetch Client**: Retrieves full block data for processing
-- **KeepAlive**: Maintains the connection
+- **Node-to-node** (`--node-name` + `--node-port`): a ChainSync client
+  follows the chain tip receiving block headers, a BlockFetch client
+  retrieves full block data, and KeepAlive maintains the connection.
+  Headers are queued (`--headers-queue-size`) and blocks are fetched in
+  batches for efficiency.
+- **Node-to-client** (`--socket-path`): a single ChainSync client streams
+  full blocks over the node's local Unix socket; there is no separate
+  BlockFetch client.
 
-Headers are queued and blocks are fetched in batches for efficiency.
+Both modes feed the same UTxO processing pipeline.
 
 ### UTxO Processing
 
@@ -62,23 +75,37 @@ The Merkle root changes with each block, providing a cryptographic commitment to
 
 ### Database (RocksDB)
 
-Three column families store different data:
+Six column families store different data:
 
 | Column | Key | Value |
 |--------|-----|-------|
-| UTxOs | TxIn (CBOR) | TxOut (CBOR) |
-| CSMT | Path | Hash + Jump |
-| Rollback Points | Slot | Changes for rollback |
+| `kv` | TxIn (CBOR) | TxOut (CBOR) |
+| `csmt` | Path | Hash + Jump |
+| `rollbacks` | Slot (or sentinel) | Inverse operations for rollback |
+| `config` | `"app_config"` | Serialised checkpoint/config |
+| `journal` | TxIn | Pending entry for KVOnly-mode replay |
+| `metrics` | counter name | Journal size counter |
 
-Rollback points enable chain reorganization handling without full recomputation.
+Rollback points enable chain reorganization handling without full
+recomputation. The `journal` and `metrics` columns support crash
+recovery during bulk replay; see
+[Database Schema](database-schema.md) for the full CDDL of the
+user-facing columns.
 
 ### HTTP API
 
 The REST API provides:
 
-- `GET /metrics` - Sync progress and performance metrics
-- `GET /merkle-roots` - Historical merkle roots by slot
+- `GET /ready` - Sync readiness for orchestration
+- `GET /metrics` - Sync progress and performance metrics (JSON)
+- `GET /metrics/prometheus` - Metrics in Prometheus exposition format
+- `GET /merkle-roots` - Historical merkle roots by block
 - `GET /proof/:txId/:txIx` - Inclusion proof for a UTxO
+- `GET /utxos-by-address/:address` - UTxOs at an address
+- `GET /await/:txId/:txIx?timeout=N` - Block until a UTxO appears
+
+All endpoints except `/ready`, `/metrics`, and `/metrics/prometheus`
+return HTTP 503 until the service reports synced.
 
 ## Data Flow
 
@@ -102,8 +129,10 @@ If rollback exceeds stored history (truncation), the service restarts sync from 
 
 ### Genesis Bootstrap
 
-The service bootstraps by reading the initial UTxO set from Byron and Shelley
-genesis files, then syncing all blocks from Origin. Key optimizations:
+On a fresh database the service bootstraps by reading the initial UTxO
+set from the Shelley genesis file (always required) and, when provided,
+the Byron genesis file's `nonAvvmBalances`, then syncing all blocks from
+Origin. Key optimizations:
 
 1. **Era projection**: Project all TxOut to Conway era before storage
 2. **Change reduction**: Reduce UTxO changes inline as ChainSync writes to the buffer,
