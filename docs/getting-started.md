@@ -4,9 +4,11 @@ This guide covers installation, configuration and usage of the Cardano UTxO CSMT
 
 ## Prerequisites
 
-- A trusted running Cardano node with secure node-to-node protocol access
-- Network connectivity to the node's port (default: 3001)
-- Shelley and Byron genesis files for your network
+- A trusted running Cardano node, reachable either over node-to-node TCP
+  (`--node-name` + `--node-port`, e.g. mainnet relay port 3001) or over
+  its local node-to-client Unix socket (`--socket-path`)
+- The Shelley genesis file for your network (always required); the Byron
+  genesis file as well if you want to bootstrap from Origin
 
 ## Installation
 
@@ -26,17 +28,19 @@ nix run github:lambdasistemi/cardano-utxo-csmt -- \
   --api-port 8080
 ```
 
-This will:
+On a fresh database this will:
 
-1. Read initial UTxOs from both Byron and Shelley genesis files
+1. Read initial UTxOs from the Shelley genesis file (and the Byron
+   genesis file's `nonAvvmBalances` when `--byron-genesis-file` is given)
 2. Insert them into the CSMT database
 3. Start chain sync from Origin
 
-!!! warning
-    Starting without `--genesis-file` and `--byron-genesis-file` will crash
-    on the first block that spends a genesis UTxO, because the UTxO won't
-    exist in the database yet. Always provide genesis files when syncing
-    from Origin.
+!!! note
+    `--genesis-file` (Shelley) is **always required** — the service reads
+    the security parameter `k`, network magic, and epoch slots from it and
+    will not start without it. When syncing from Origin, also pass
+    `--byron-genesis-file`; otherwise the first block that spends a Byron
+    genesis UTxO will fail because that UTxO is not in the database.
 
 The genesis files are part of the node configuration. For a local NixOS node
 they are typically found alongside the node config (e.g.
@@ -46,15 +50,23 @@ they are typically found alongside the node config (e.g.
 
 | Option | Description |
 |--------|-------------|
-| `--network` | Network: `mainnet`, `preprod`, `preview` (default: mainnet) |
-| `--node-name` | Override peer node hostname |
-| `--node-port` | Override peer node port |
-| `--socket-path` | Node-to-Client Unix socket path |
-| `--db-path` | RocksDB database path (required) |
+| `--network`, `-n` | Network: `mainnet`, `preprod`, `preview`, `devnet` (default: mainnet) — selects the default peer node |
+| `--node-name`, `-s` | Peer node hostname (node-to-node mode) |
+| `--node-port`, `-p` | Peer node port (node-to-node mode) |
+| `--socket-path` | Node-to-client Unix socket path |
+| `--db-path`, `-d` | RocksDB database path (required) |
+| `--genesis-file` | Path to `shelley-genesis.json` (required) |
+| `--byron-genesis-file` | Path to `byron-genesis.json` for genesis bootstrap (recommended) |
 | `--api-port` | HTTP API port for REST endpoints |
-| `--api-docs-port` | HTTP port for Swagger UI documentation |
-| `--genesis-file` | Path to shelley-genesis.json for genesis bootstrap (required) |
-| `--byron-genesis-file` | Path to byron-genesis.json for genesis bootstrap (recommended) |
+| `--api-docs-port` | HTTP port for the Swagger UI documentation server |
+| `--config-file`, `-c` | YAML configuration file (`conf` options may be set here) |
+| `--log-path`, `-l` | Log file path (logs to stdout if omitted) |
+| `--headers-queue-size`, `-q` | Header queue size (default: 10) |
+| `--sync-threshold` | Max slots behind tip to be considered synced (default: 100) |
+| `--enable-metrics-reporting` | Emit metrics on stdout |
+
+Provide exactly one connection mode: either `--socket-path` (node-to-client)
+or `--node-name` + `--node-port` (node-to-node).
 
 ## Verifying the Service
 
@@ -66,10 +78,12 @@ curl http://localhost:8080/ready
 
 # Check metrics
 curl http://localhost:8080/metrics
-
-# View API documentation
-open http://localhost:8080/api-docs/swagger-ui
 ```
+
+The Swagger UI is served by a separate documentation server on
+`--api-docs-port`. Start the service with, for example,
+`--api-docs-port 8081`, then open
+`http://localhost:8081/api-docs/swagger-ui`.
 
 ## Next Steps
 

@@ -73,4 +73,4 @@ Once running:
 
 - **Metrics**: `http://localhost:{API_PORT}/metrics`
 - **Ready**: `http://localhost:{API_PORT}/ready`
-- **Swagger**: `http://localhost:{API_DOCS_PORT}/`
+- **Swagger**: `http://localhost:{API_DOCS_PORT}/api-docs/swagger-ui`
