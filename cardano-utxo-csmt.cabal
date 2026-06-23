@@ -368,6 +368,7 @@ test-suite database-tests
     , mempack
     , mts
     , mts:csmt
+    , mts:csmt-verify
     , ouroboros-network:api
     , path
     , QuickCheck

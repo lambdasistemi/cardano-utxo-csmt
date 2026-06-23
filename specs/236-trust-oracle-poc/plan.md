@@ -19,16 +19,19 @@ to csmt-core, `CompletenessEmpty` for absent prefixes, subtree-to-root inclusion
 order). Green build + unit/database tests. This is the determinism-by-linkage gate:
 publisher now derives proofs with the same `mts` the verifier checks with.
 
-### Slice 2 — serve root + proof by chainpoint
-Extend the `http` API: `GET` the address-prefixed UTxO-CSMT **root** for a
-chainpoint, and an on-demand **inclusion/exclusion proof** for a given key at a
-chainpoint. (Uses the existing trie + DB; no new trie.)
+### Slice 2 — consumer verifies the served proof with the generic mts:csmt-verify  (RE-AIMED)
+Recon: serving already exists and is HTTP-tested (`GET /merkle-roots`,
+`GET /proof/:txId/:txIx` → `InclusionProofResponse{proofBytes, proofBlockHash}`).
+The real gap is consumer-side verification with the **shared** verifier: nothing
+calls `mts:csmt-verify` (`verifyInclusionProof :: ByteString -> ByteString -> Bool`)
+on the served root+proof; the repo doesn't even depend on it. Add an HTTP-boundary
+test that fetches `/merkle-roots` + `/proof`, decodes, and verifies with
+`mts:csmt-verify` → True for a present UTxO; absent → 404 discriminates. This is
+"the oracle is usable", and it exercises the determinism-by-linkage from slice 1.
 
-### Slice 3 — usable demo / cross-check
-A consumer path (integration test or small `verify` entrypoint) that fetches
-root(X) + proof and verifies via `mts:csmt-verify`: pass for a present UTxO,
-reject for an absent one. Demo tie-in: target the MPFS token UTxO at its script
-address.
+### Slice 3 — (optional/stretch) cryptographic absence over HTTP
+Route the existing `queryExclusionProof` as an HTTP endpoint so an absent UTxO
+returns a verifiable exclusion proof (not just 404). Defer if S2 suffices.
 
 ## Operator follow-up (not a code slice)
 Deploy the server behind Traefik on our infra (e.g. `csmt-train.dev.plutimus.com`)

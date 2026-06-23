@@ -14,6 +14,7 @@ import CSMT.Hashes
     , mkHash
     , renderHash
     )
+import CSMT.Verify qualified as Verify
 import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     ( Columns (..)
     , Prisms (..)
@@ -41,7 +42,8 @@ import Cardano.UTxOCSMT.HTTP.API
     , UTxOByAddressEntry (..)
     )
 import Cardano.UTxOCSMT.HTTP.Base16
-    ( encodeBase16Text
+    ( decodeBase16Text
+    , encodeBase16Text
     )
 import Cardano.UTxOCSMT.HTTP.Server (apiApp)
 import ChainFollower.Backend qualified as Backend
@@ -67,6 +69,7 @@ import Data.ByteArray.Encoding
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BC
 import Data.ByteString.Lazy qualified as BL
+import Data.List (find)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -175,6 +178,29 @@ mkTestValue = BL.fromStrict . BC.pack
 
 encodeBase16 :: ByteString -> Text
 encodeBase16 = TE.decodeUtf8 . convertToBase Base16
+
+decodeBase16OrFail :: Text -> IO ByteString
+decodeBase16OrFail txt =
+    case decodeBase16Text txt of
+        Left err -> fail $ "Base16 decode error: " ++ err
+        Right bs -> pure bs
+
+servedRootForProof
+    :: InclusionProofResponse
+    -> [MerkleRootEntry]
+    -> IO ByteString
+servedRootForProof proof roots =
+    case find matchingBlockHash roots >>= merkleRoot of
+        Nothing ->
+            fail
+                $ "No merkle root for proof block hash "
+                    ++ T.unpack (proofBlockHash proof)
+        Just rootHash ->
+            pure $ renderHash rootHash
+  where
+    matchingBlockHash entry =
+        encodeBase16Text (renderHash (blockHash entry))
+            == proofBlockHash proof
 
 -- | Concrete column type.
 type Cols =
@@ -401,16 +427,13 @@ queryTestInclusionProof (RunTransaction runTx) actualKey _txIdText _txIx =
             tipSlot <- case mTip of
                 Just (Value sn) -> Just sn
                 _ -> Nothing
+            let blockHash = testSlotHash tipSlot
             pure
                 InclusionProofResponse
                     { proofTxOut = encodeBase16 $ BL.toStrict out
                     , proofBytes = encodeBase16Text proof'
                     , proofBlockHash =
-                        encodeBase16Text
-                            $ renderHash
-                            $ mkHash
-                            $ BC.pack
-                            $ show tipSlot
+                        encodeBase16Text $ renderHash blockHash
                     }
 
 prefixedCSMTContext :: CSMTContext Hash BL.ByteString BL.ByteString
@@ -669,12 +692,41 @@ spec = do
                             let decoded =
                                     eitherDecode (simpleBody resp)
                                         :: Either String InclusionProofResponse
-                            liftIO $ case decoded of
-                                Left err -> fail $ "JSON decode error: " ++ err
-                                Right proof -> do
-                                    proofBytes proof `shouldSatisfy` (not . T.null)
-                                    proofTxOut proof `shouldSatisfy` (not . T.null)
-                                    proofBlockHash proof `shouldSatisfy` (not . T.null)
+                            proof <- case decoded of
+                                Left err ->
+                                    liftIO
+                                        $ fail
+                                        $ "JSON decode error: "
+                                            ++ err
+                                Right proof -> pure proof
+                            liftIO $ do
+                                proofBytes proof `shouldSatisfy` (not . T.null)
+                                proofTxOut proof `shouldSatisfy` (not . T.null)
+                                proofBlockHash proof `shouldSatisfy` (not . T.null)
+                            rootsResp <-
+                                request
+                                    $ setPath
+                                        defaultRequest{requestMethod = methodGet}
+                                        "/merkle-roots"
+                            liftIO $ simpleStatus rootsResp `shouldBe` status200
+                            let decodedRoots =
+                                    eitherDecode (simpleBody rootsResp)
+                                        :: Either String [MerkleRootEntry]
+                            roots <- case decodedRoots of
+                                Left err ->
+                                    liftIO
+                                        $ fail
+                                        $ "JSON decode error: "
+                                            ++ err
+                                Right roots -> pure roots
+                            liftIO $ do
+                                rootBs <- servedRootForProof proof roots
+                                proofBs <-
+                                    decodeBase16OrFail (proofBytes proof)
+                                Verify.verifyInclusionProof
+                                    rootBs
+                                    proofBs
+                                    `shouldBe` True
 
         describe "GET /utxos-by-address/:address" $ do
             it "returns empty list for unknown address" $ do
