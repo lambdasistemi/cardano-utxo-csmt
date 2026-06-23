@@ -46,6 +46,7 @@ import ChainFollower.Rollbacks.Types (RollbackPoint (..))
 import Control.Lens (Iso', review)
 import Control.Monad.Trans (lift)
 import Data.ByteString (ByteString)
+import Data.List (stripPrefix)
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Word (Word64)
 import Database.KV.Cursor
@@ -90,14 +91,17 @@ mkQuery isoK =
                         . mkHash
                         $ addressBytes
             indirects <- collectValues CSMTCol [] addressKey
-            catMaybes <$> traverse lookupKV indirects
+            catMaybes <$> traverse (lookupKV addressKey) indirects
         , awaitValue = \k _timeout -> query KVCol k
         }
   where
-    lookupKV indirect = do
-        let k = review isoK (jump indirect)
-        mv <- query KVCol k
-        pure $ fmap (k,) mv
+    lookupKV addressKey Indirect{jump} =
+        case stripPrefix addressKey jump of
+            Nothing -> pure Nothing
+            Just keyPath -> do
+                let k = review isoK keyPath
+                mv <- query KVCol k
+                pure $ fmap (k,) mv
 
 {- | Create a 'Query' interface for RocksDB where all queries are run in separate transactions
 Useful for property testing

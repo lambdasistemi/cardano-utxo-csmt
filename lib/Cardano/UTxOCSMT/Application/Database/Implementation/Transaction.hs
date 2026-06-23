@@ -35,6 +35,7 @@ import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
     )
 import Control.Lens (Iso', review)
 import Data.ByteString (ByteString)
+import Data.List (stripPrefix)
 import Data.Maybe (catMaybes)
 import Database.KV.Transaction
     ( Transaction
@@ -193,9 +194,12 @@ queryByAddress
     -> Transaction m cf (Columns slot hash key value) op [(key, value)]
 queryByAddress FromKV{isoK} addressKey = do
     indirects <- collectValues CSMTCol [] addressKey
-    catMaybes <$> traverse (lookupKV isoK) indirects
+    catMaybes <$> traverse (lookupKV isoK addressKey) indirects
   where
-    lookupKV isoK' Indirect{jump} = do
-        let k = review isoK' jump
-        mv <- query KVCol k
-        pure $ fmap (k,) mv
+    lookupKV isoK' addressKey' Indirect{jump} =
+        case stripPrefix addressKey' jump of
+            Nothing -> pure Nothing
+            Just keyPath -> do
+                let k = review isoK' keyPath
+                mv <- query KVCol k
+                pure $ fmap (k,) mv
