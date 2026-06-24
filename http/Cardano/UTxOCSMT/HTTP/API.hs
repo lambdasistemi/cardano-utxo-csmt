@@ -18,6 +18,7 @@ module Cardano.UTxOCSMT.HTTP.API
     , API
     , DOCS
     , docs
+    , ChainPoint (..)
     , MerkleRootEntry (..)
     , InclusionProofResponse (..)
     , UTxOByAddressEntry (..)
@@ -31,7 +32,7 @@ import Cardano.UTxOCSMT.Application.Metrics (Metrics)
 import Cardano.UTxOCSMT.HTTP.Base16 (decodeBase16Text)
 import Control.Lens ((&), (.~), (?~))
 import Data.Aeson
-import Data.Aeson.Types (Parser)
+import Data.Aeson.Types (Pair, Parser)
 import Data.ByteArray.Encoding (Base (..), convertToBase)
 import Data.Proxy (Proxy (..))
 import Data.Swagger
@@ -46,6 +47,7 @@ import Data.Text (Text)
 import Data.Text.Encoding qualified as Text
 import Data.Word (Word16, Word64)
 import GHC.IsList (IsList (..))
+import Ouroboros.Network.Block (SlotNo (..))
 import Servant
     ( Capture
     , Get
@@ -92,9 +94,17 @@ type API =
 api :: Proxy API
 api = Proxy
 
+-- | A Cardano chain point represented by slot number and block hash.
+data ChainPoint = ChainPoint
+    { chainPointSlotNo :: SlotNo
+    , chainPointBlockHash :: Hash
+    }
+    deriving (Show, Eq)
+
 -- | Entry for a merkle root at a given block
 data MerkleRootEntry = MerkleRootEntry
-    { blockHash :: Hash
+    { slotNo :: SlotNo
+    , blockHash :: Hash
     , merkleRoot :: Maybe Hash
     }
     deriving (Show, Eq)
@@ -102,7 +112,8 @@ data MerkleRootEntry = MerkleRootEntry
 data InclusionProofResponse = InclusionProofResponse
     { proofTxOut :: Text
     , proofBytes :: Text
-    , proofBlockHash :: Text
+    , proofSlotNo :: SlotNo
+    , proofBlockHash :: Hash
     }
     deriving (Show, Eq)
 
@@ -147,50 +158,101 @@ instance ToSchema UTxOByAddressEntry where
 renderHashBase16 :: Hash -> Text
 renderHashBase16 = Text.decodeUtf8 . convertToBase Base16 . renderHash
 
+parseHashBase16 :: Text -> Parser Hash
+parseHashBase16 txt =
+    case decodeBase16Text txt of
+        Left err -> fail $ "Invalid base16 hash: " ++ err
+        Right bs -> case parseHash bs of
+            Just h -> return h
+            Nothing ->
+                fail "Invalid hash length (expected 32 bytes)"
+
+chainPointFields :: ChainPoint -> [Pair]
+chainPointFields
+    ChainPoint
+        { chainPointSlotNo
+        , chainPointBlockHash
+        } =
+        [ "slotNo" .= unSlotNo chainPointSlotNo
+        , "blockHash" .= renderHashBase16 chainPointBlockHash
+        ]
+
+parseChainPoint :: Object -> Parser ChainPoint
+parseChainPoint v =
+    ChainPoint . SlotNo
+        <$> v .: "slotNo"
+        <*> (v .: "blockHash" >>= parseHashBase16)
+
+instance ToJSON ChainPoint where
+    toJSON = object . chainPointFields
+
+instance FromJSON ChainPoint where
+    parseJSON = withObject "ChainPoint" parseChainPoint
+
 instance ToJSON MerkleRootEntry where
-    toJSON MerkleRootEntry{blockHash, merkleRoot} =
+    toJSON MerkleRootEntry{slotNo, blockHash, merkleRoot} =
         object
-            [ "blockHash" .= renderHashBase16 blockHash
-            , "merkleRoot" .= fmap renderHashBase16 merkleRoot
-            ]
+            $ chainPointFields
+                ChainPoint{chainPointSlotNo = slotNo, chainPointBlockHash = blockHash}
+                <> [ "merkleRoot" .= fmap renderHashBase16 merkleRoot
+                   ]
 
 instance FromJSON MerkleRootEntry where
-    parseJSON = withObject "MerkleRootEntry" $ \v ->
+    parseJSON = withObject "MerkleRootEntry" $ \v -> do
+        ChainPoint{chainPointSlotNo, chainPointBlockHash} <-
+            parseChainPoint v
         MerkleRootEntry
-            <$> (v .: "blockHash" >>= parseHashBase16)
-            <*> (v .: "merkleRoot" >>= mapM parseHashBase16)
-      where
-        parseHashBase16 :: Text -> Parser Hash
-        parseHashBase16 txt =
-            case decodeBase16Text txt of
-                Left err -> fail $ "Invalid base16 hash: " ++ err
-                Right bs -> case parseHash bs of
-                    Just h -> return h
-                    Nothing ->
-                        fail "Invalid hash length (expected 32 bytes)"
+            chainPointSlotNo
+            chainPointBlockHash
+            <$> (v .: "merkleRoot" >>= mapM parseHashBase16)
 
 instance ToJSON InclusionProofResponse where
     toJSON
         InclusionProofResponse
             { proofTxOut
             , proofBytes
+            , proofSlotNo
             , proofBlockHash
             } =
             object
-                [ "txOut" .= proofTxOut
-                , "proof" .= proofBytes
-                , "blockHash" .= proofBlockHash
-                ]
+                $ [ "txOut" .= proofTxOut
+                  , "proof" .= proofBytes
+                  ]
+                    <> chainPointFields
+                        ChainPoint
+                            { chainPointSlotNo = proofSlotNo
+                            , chainPointBlockHash = proofBlockHash
+                            }
 
 instance FromJSON InclusionProofResponse where
-    parseJSON = withObject "InclusionProofResponse" $ \v ->
+    parseJSON = withObject "InclusionProofResponse" $ \v -> do
+        ChainPoint{chainPointSlotNo, chainPointBlockHash} <-
+            parseChainPoint v
         InclusionProofResponse
             <$> v .: "txOut"
             <*> v .: "proof"
-            <*> v .: "blockHash"
+            <*> pure chainPointSlotNo
+            <*> pure chainPointBlockHash
+
+instance ToSchema ChainPoint where
+    declareNamedSchema _ = do
+        stringSchema <- declareSchemaRef (Proxy @String)
+        word64Schema <- declareSchemaRef (Proxy @Word64)
+        return
+            $ Swagger.NamedSchema (Just "ChainPoint")
+            $ mempty
+            & Swagger.type_ ?~ Swagger.SwaggerObject
+            & properties
+                .~ fromList
+                    [ ("slotNo", word64Schema)
+                    , ("blockHash", stringSchema)
+                    ]
+            & required .~ ["slotNo", "blockHash"]
+            & description ?~ "A chain point with slot number and block hash."
 instance ToSchema MerkleRootEntry where
     declareNamedSchema _ = do
         stringSchema <- declareSchemaRef (Proxy @String)
+        word64Schema <- declareSchemaRef (Proxy @Word64)
         maybeStringSchema <- declareSchemaRef (Proxy @(Maybe String))
         return
             $ Swagger.NamedSchema (Just "MerkleRootEntry")
@@ -198,15 +260,17 @@ instance ToSchema MerkleRootEntry where
             & Swagger.type_ ?~ Swagger.SwaggerObject
             & properties
                 .~ fromList
-                    [ ("blockHash", stringSchema)
+                    [ ("slotNo", word64Schema)
+                    , ("blockHash", stringSchema)
                     , ("merkleRoot", maybeStringSchema)
                     ]
-            & required .~ ["blockHash", "merkleRoot"]
+            & required .~ ["slotNo", "blockHash", "merkleRoot"]
             & description ?~ "A merkle root at a given block"
 
 instance ToSchema InclusionProofResponse where
     declareNamedSchema _ = do
         stringSchema <- declareSchemaRef (Proxy @String)
+        word64Schema <- declareSchemaRef (Proxy @Word64)
         return
             $ Swagger.NamedSchema (Just "InclusionProofResponse")
             $ mempty
@@ -215,11 +279,12 @@ instance ToSchema InclusionProofResponse where
                 .~ fromList
                     [ ("txOut", stringSchema)
                     , ("proof", stringSchema)
+                    , ("slotNo", word64Schema)
                     , ("blockHash", stringSchema)
                     ]
-            & required .~ ["txOut", "proof", "blockHash"]
+            & required .~ ["txOut", "proof", "slotNo", "blockHash"]
             & description
-                ?~ "Inclusion proof, output, and block hash for the given transaction input."
+                ?~ "Inclusion proof, output, and chain point for the given transaction input."
 
 -- | Response for the /ready endpoint indicating sync status
 data ReadyResponse = ReadyResponse
