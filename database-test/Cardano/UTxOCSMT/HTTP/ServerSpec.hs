@@ -60,7 +60,9 @@ import Codec.CBOR.Write qualified as CBOR
 import Control.Lens (lazy, prism', strict, view)
 import Control.Monad.IO.Class (liftIO)
 import Control.Tracer (nullTracer)
-import Data.Aeson (eitherDecode)
+import Data.Aeson (Value (..), eitherDecode)
+import Data.Aeson.Key (Key)
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteArray.Encoding
     ( Base (..)
     , convertFromBase
@@ -185,6 +187,10 @@ decodeBase16OrFail txt =
         Left err -> fail $ "Base16 decode error: " ++ err
         Right bs -> pure bs
 
+jsonObjectHasKey :: Key -> Value -> Bool
+jsonObjectHasKey key (Object object) = KeyMap.member key object
+jsonObjectHasKey _ _ = False
+
 servedRootForProof
     :: InclusionProofResponse
     -> [MerkleRootEntry]
@@ -194,13 +200,14 @@ servedRootForProof proof roots =
         Nothing ->
             fail
                 $ "No merkle root for proof block hash "
-                    ++ T.unpack (proofBlockHash proof)
+                    ++ T.unpack
+                        (encodeBase16Text $ renderHash $ proofBlockHash proof)
         Just rootHash ->
             pure $ renderHash rootHash
   where
     matchingBlockHash entry =
-        encodeBase16Text (renderHash (blockHash entry))
-            == proofBlockHash proof
+        slotNo entry == proofSlotNo proof
+            && blockHash entry == proofBlockHash proof
 
 -- | Concrete column type.
 type Cols =
@@ -394,8 +401,8 @@ queryTestMerkleRoots (RunTransaction runTx) =
         pure $ concatMap toEntry (reverse history)
   where
     toEntry (slot, RollbackPoint{rpMeta}) = case (slot, rpMeta) of
-        (Value _, Just (blockHash, merkleRoot)) ->
-            [MerkleRootEntry{blockHash, merkleRoot}]
+        (Value slotNo, Just (blockHash, merkleRoot)) ->
+            [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
         _ -> []
 
 -- | Query inclusion proof for testing.
@@ -432,8 +439,8 @@ queryTestInclusionProof (RunTransaction runTx) actualKey _txIdText _txIx =
                 InclusionProofResponse
                     { proofTxOut = encodeBase16 $ BL.toStrict out
                     , proofBytes = encodeBase16Text proof'
-                    , proofBlockHash =
-                        encodeBase16Text $ renderHash blockHash
+                    , proofSlotNo = tipSlot
+                    , proofBlockHash = blockHash
                     }
 
 prefixedCSMTContext :: CSMTContext Hash BL.ByteString BL.ByteString
@@ -631,6 +638,14 @@ spec = do
                                 Left err -> fail $ "JSON decode error: " ++ err
                                 Right entries ->
                                     length entries `shouldBe` 2
+                            let decodedJSON =
+                                    eitherDecode (simpleBody resp)
+                                        :: Either String [Value]
+                            liftIO $ case decodedJSON of
+                                Left err -> fail $ "JSON decode error: " ++ err
+                                Right entries ->
+                                    all (jsonObjectHasKey "slotNo") entries
+                                        `shouldBe` True
 
         describe "GET /proof/{txId}/{txIx}" $ do
             it "returns 404 for non-existent UTxO" $ do
@@ -702,7 +717,20 @@ spec = do
                             liftIO $ do
                                 proofBytes proof `shouldSatisfy` (not . T.null)
                                 proofTxOut proof `shouldSatisfy` (not . T.null)
-                                proofBlockHash proof `shouldSatisfy` (not . T.null)
+                                proofSlotNo proof `shouldBe` SlotNo 100
+                                encodeBase16Text
+                                    (renderHash $ proofBlockHash proof)
+                                    `shouldSatisfy` (not . T.null)
+                            let decodedProofJSON =
+                                    eitherDecode (simpleBody resp)
+                                        :: Either String Value
+                            liftIO $ case decodedProofJSON of
+                                Left err -> fail $ "JSON decode error: " ++ err
+                                Right proofJSON -> do
+                                    jsonObjectHasKey "slotNo" proofJSON
+                                        `shouldBe` True
+                                    jsonObjectHasKey "blockHash" proofJSON
+                                        `shouldBe` True
                             rootsResp <-
                                 request
                                     $ setPath

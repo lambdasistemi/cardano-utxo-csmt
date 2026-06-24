@@ -22,7 +22,6 @@ where
 import CSMT.Hashes
     ( Hash
     , generateInclusionProof
-    , renderHash
     )
 import CSMT.Interface (FromKV (..), root)
 import CSMT.Proof.Exclusion
@@ -119,8 +118,8 @@ queryMerkleRoots (RunTransaction runTx) =
         case slot of
             Sentinel -> []
             Value (Network.Point Origin) -> []
-            Value (Network.Point (At Block{})) ->
-                [MerkleRootEntry{blockHash, merkleRoot}]
+            Value (Network.Point (At Block{blockPointSlot = slotNo})) ->
+                [MerkleRootEntry{slotNo, blockHash, merkleRoot}]
 
 {- | Retrieve the inclusion proof and UTxO value for a transaction input.
 
@@ -150,19 +149,17 @@ queryInclusionProof (RunTransaction runTx) txIdText txIx = do
         mTip <- queryTip Rollbacks
         pure $ do
             (out, proof') <- result
-            bh <- case mTip of
-                Just (Value pt@(Network.Point (At Block{}))) ->
-                    Just (slotHash pt)
+            (proofSlotNo, proofBlockHash) <- case mTip of
+                Just (Value pt@(Network.Point (At block@Block{}))) ->
+                    Just (blockPointSlot block, slotHash pt)
                 _ -> Nothing
             pure
                 InclusionProofResponse
                     { proofTxOut = encodeBase16Text $ toStrict out
                     , proofBytes =
                         Text.decodeUtf8 $ convertToBase Base16 proof'
-                    , proofBlockHash =
-                        Text.decodeUtf8
-                            $ convertToBase Base16
-                            $ renderHash bh
+                    , proofSlotNo
+                    , proofBlockHash
                     }
   where
     txIn = unsafeMkTxIn (toShort $ unsafeDecodeBase16Text txIdText) txIx

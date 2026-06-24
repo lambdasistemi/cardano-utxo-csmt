@@ -23,13 +23,19 @@
             "type": "object"
         },
         "InclusionProofResponse": {
-            "description": "Inclusion proof, output, and block hash for the given transaction input.",
+            "description": "Inclusion proof, output, and chain point for the given transaction input.",
             "properties": {
                 "blockHash": {
                     "type": "string"
                 },
                 "proof": {
                     "type": "string"
+                },
+                "slotNo": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
                 },
                 "txOut": {
                     "type": "string"
@@ -38,6 +44,7 @@
             "required": [
                 "txOut",
                 "proof",
+                "slotNo",
                 "blockHash"
             ],
             "type": "object"
@@ -50,9 +57,16 @@
                 },
                 "merkleRoot": {
                     "type": "string"
+                },
+                "slotNo": {
+                    "format": "int64",
+                    "maximum": 1.8446744073709551615e19,
+                    "minimum": 0,
+                    "type": "integer"
                 }
             },
             "required": [
+                "slotNo",
                 "blockHash",
                 "merkleRoot"
             ],
