@@ -1,0 +1,28 @@
+%%{init: {"theme": "dark", "themeVariables": {"edgeLabelBackground": "transparent"}}}%%
+flowchart LR
+    subgraph Clients [Light Clients]
+        Mobile[Mobile]
+        Browser[Browser]
+        IoT[IoT]
+    end
+    subgraph Web2 [Web2 Platforms]
+        GitHub[GitHub]
+        X[Twitter/X]
+        CDN[CDN]
+    end
+    subgraph Publishers [Merkle Root Publishers]
+        Mithril[Mithril]
+        SPOs[SPOs]
+        CF[Foundation]
+        IOG[IOG]
+    end
+    subgraph Servers [Application Servers]
+        MPFS[MPFS]
+        Blockfrost[Blockfrost]
+        Koios[Koios]
+    end
+    Publishers -->|publish roots| Web2
+    Clients -->|1. Fetch roots| Web2
+    Clients -->|2. Request data + proofs| Servers
+    Servers -->|cardano-utxo-csmt| BC[(Cardano Blockchain)]
+    Publishers -->|cardano-utxo-csmt| BC

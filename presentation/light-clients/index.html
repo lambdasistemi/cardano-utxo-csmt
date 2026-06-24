@@ -1,0 +1,738 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://lambdasistemi.github.io/cardano-utxo-csmt/presentation/light-clients/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Poor Man's Light Clients for Cardano - Cardano UTXO CSMT</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#poor-mans-light-clients-for-cardano" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Cardano UTXO CSMT" class="md-header__button md-logo" aria-label="Cardano UTXO CSMT" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Cardano UTXO CSMT
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Poor Man's Light Clients for Cardano
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lambdasistemi/cardano-utxo-csmt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Cardano UTXO CSMT" class="md-nav__button md-logo" aria-label="Cardano UTXO CSMT" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Cardano UTXO CSMT
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lambdasistemi/cardano-utxo-csmt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../database-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Database Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../swagger-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Swagger UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="poor-mans-light-clients-for-cardano">Poor Man's Light Clients for Cardano</h1>
+<h3 id="trust-minimized-blockchain-access-via-merkle-proofs">Trust-minimized blockchain access via Merkle proofs</h3>
+<hr />
+<h2 id="the-challenge-full-nodes-are-heavy">The Challenge: Full Nodes Are Heavy</h2>
+<p><strong>Today's Reality</strong></p>
+<ul>
+<li>Running a Cardano full node requires <strong>~300GB</strong> of storage</li>
+<li>High memory requirements</li>
+<li>Constant network availability and bandwidth</li>
+</ul>
+<p><strong>Tomorrow's Reality</strong></p>
+<ul>
+<li>Storage requirements will only grow</li>
+<li>Hardware requirements will rise with new features</li>
+<li>Amaru will help a bit, but not enough</li>
+</ul>
+<p><strong>This kills participation</strong></p>
+<hr />
+<h2 id="why-does-this-matter">Why Does This Matter?</h2>
+<p><strong>Decentralization depends on accessibility</strong></p>
+<ul>
+<li>Mobile wallets can't run full nodes</li>
+<li>Browsers can't run full nodes</li>
+<li>IoT devices can't run full nodes</li>
+<li>Developing countries face infrastructure barriers</li>
+</ul>
+<p><strong>Result:</strong> Most users depend on centralized services for blockchain data and transaction building.</p>
+<hr />
+<h2 id="the-trust-problem">The Trust Problem</h2>
+<p><strong>Application servers provide blockchain data and unsigned transactions for users to interact with the network.</strong></p>
+<ul>
+<li>Without a full node, users must trust the server</li>
+<li>Trusting a centralized server undermines decentralization</li>
+<li>Even honest servers bring risks: hackers can compromise them</li>
+<li>Users have no way to verify data integrity</li>
+</ul>
+<hr />
+<p><strong>Current Light Client Options</strong></p>
+<table>
+<thead>
+<tr>
+<th>Approach</th>
+<th>Trust Required</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Centralized API</td>
+<td>Trust the provider completely</td>
+</tr>
+<tr>
+<td>Full node</td>
+<td>Trust no one (but heavy)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>We need a middle ground</strong></p>
+<hr />
+<h2 id="we-can-prove-an-untrusted-server-is-honest">We Can Prove an Untrusted Server Is Honest</h2>
+<p><strong>Cryptographic Proofs Remove Trust Assumptions from servers of web3 applications.</strong></p>
+<p>If untrusted servers provide proofs that clients can verify independently, we remove the need to trust them:
+- <strong>Good for the server</strong>: they're protected even if hacked or compromised
+- <strong>Good for the client</strong>: they trust math, not promises
+- <strong>Good for trusted parties</strong>: they build reputation without involvement in specific applications</p>
+<hr />
+<h2 id="the-solution-merkle-trees">The Solution: Merkle Trees</h2>
+<p><strong>A Fingerprint for the Entire UTxO Set</strong></p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>        Root Hash (32 bytes)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>       /                    \
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    Hash                    Hash
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>   /    \                  /    \
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a> UTxO  UTxO              UTxO  UTxO
+</span></code></pre></div>
+<ul>
+<li>A single root hash represents <strong>millions of UTxOs</strong></li>
+<li>Anyone can verify that a UTxO belongs to the set</li>
+<li>Changing any UTxO changes the root</li>
+</ul>
+<hr />
+<h2 id="the-simplest-possible-infrastructure">The Simplest Possible Infrastructure</h2>
+<p><strong>Publishing a Merkle root is trivial</strong></p>
+<p>A JSON file with UTxO set root hashes covering the rollback window, updated every block (~20 seconds):</p>
+<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">[</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123456789</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;a1b2c3...&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123456769</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;d4e5f6...&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123456749</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;root&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;g7h8i9...&quot;</span><span class="w"> </span><span class="p">},</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="err">...</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p">]</span>
+</span></code></pre></div>
+<p><strong>Can be hosted anywhere:</strong>
+- GitHub release asset
+- Google Drive
+- S3 bucket
+- Even a tweet/X post</p>
+<hr />
+<h2 id="poor-mans-multisignature">Poor Man's Multisignature</h2>
+<p><strong>Multiple independent publishers = distributed trust</strong></p>
+<div style="margin: 1em auto; text-align: center;">
+<!-- publishers --><img src="https://mermaid.ink/svg/JSV7aW5pdDogeyJ0aGVtZSI6ICJkYXJrIiwgInRoZW1lVmFyaWFibGVzIjogeyJlZGdlTGFiZWxCYWNrZ3JvdW5kIjogInRyYW5zcGFyZW50In19fSUlCmZsb3djaGFydCBURAogICAgc3ViZ3JhcGggVHJ1c3RlZCBSb290IFB1Ymxpc2hlcnMKICAgICAgICBDRltDYXJkYW5vIEZvdW5kYXRpb25dCiAgICAgICAgSU9HW0lPR10KICAgICAgICBFbXVyZ29bRW11cmdvXQogICAgICAgIE1pdGhyaWxbTWl0aHJpbF0KICAgIGVuZAogICAgQ0YgLS0-IFIxW3Jvb3Qgb2YgY2hhaW4tcG9pbnQgJ2FiNDUzYi4uLiddCiAgICBJT0cgLS0-IFIyW3Jvb3Qgb2YgY2hhaW4tcG9pbnQgJ2FiNDUzYi4uLiddCiAgICBFbXVyZ28gLS0-IFIzW3Jvb3Qgb2YgY2hhaW4tcG9pbnQgJ2FiNDUzYi4uLiddCiAgICBNaXRocmlsIC0tPiBSNFtyb290IG9mIGNoYWluLXBvaW50ICdhYjQ1M2IuLi4nXQogICAgUjEgJiBSMiAmIFIzICYgUjQgLS0-IFZ7QWxsIG1hdGNoP30KICAgIFYgLS0-fFllc3wgVFtDbGllbnQgYWNjZXB0cyB2YWxpZCBwcm9vZnMgZm9yIHRoZSByb290ICdhYjQ1M2IuLi4nXQo=" style="max-height: 350px;">
+</div>
+
+<p><strong>Light clients sample 2-3 sources:</strong> match → verified | differ → investigate</p>
+<hr />
+<h2 id="who-should-publish">Who Should Publish?</h2>
+<p><strong>Institutions (low effort, high impact)</strong></p>
+<table>
+<thead>
+<tr>
+<th>Publisher</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cardano Foundation</td>
+<td>Ecosystem steward</td>
+</tr>
+<tr>
+<td>IOG</td>
+<td>Core developers</td>
+</tr>
+<tr>
+<td>Emurgo</td>
+<td>Enterprise adoption</td>
+</tr>
+<tr>
+<td>Mithril team</td>
+<td>Already running infra</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Anyone else</strong></p>
+<ul>
+<li>Stake pool operators</li>
+<li>Exchanges</li>
+<li>dApp developers</li>
+<li>Community members</li>
+<li>Any company using Cardano for business operations</li>
+</ul>
+<p><strong>More publishers = stronger decentralization</strong></p>
+<hr />
+<h2 id="the-architecture">The Architecture</h2>
+<div style="margin: 1em auto; text-align: center;">
+<!-- architecture --><img src="https://mermaid.ink/svg/JSV7aW5pdDogeyJ0aGVtZSI6ICJkYXJrIiwgInRoZW1lVmFyaWFibGVzIjogeyJlZGdlTGFiZWxCYWNrZ3JvdW5kIjogInRyYW5zcGFyZW50In19fSUlCmZsb3djaGFydCBMUgogICAgc3ViZ3JhcGggQ2xpZW50cyBbTGlnaHQgQ2xpZW50c10KICAgICAgICBNb2JpbGVbTW9iaWxlXQogICAgICAgIEJyb3dzZXJbQnJvd3Nlcl0KICAgICAgICBJb1RbSW9UXQogICAgZW5kCiAgICBzdWJncmFwaCBXZWIyIFtXZWIyIFBsYXRmb3Jtc10KICAgICAgICBHaXRIdWJbR2l0SHViXQogICAgICAgIFhbVHdpdHRlci9YXQogICAgICAgIENETltDRE5dCiAgICBlbmQKICAgIHN1YmdyYXBoIFB1Ymxpc2hlcnMgW01lcmtsZSBSb290IFB1Ymxpc2hlcnNdCiAgICAgICAgTWl0aHJpbFtNaXRocmlsXQogICAgICAgIFNQT3NbU1BPc10KICAgICAgICBDRltGb3VuZGF0aW9uXQogICAgICAgIElPR1tJT0ddCiAgICBlbmQKICAgIHN1YmdyYXBoIFNlcnZlcnMgW0FwcGxpY2F0aW9uIFNlcnZlcnNdCiAgICAgICAgTVBGU1tNUEZTXQogICAgICAgIEJsb2NrZnJvc3RbQmxvY2tmcm9zdF0KICAgICAgICBLb2lvc1tLb2lvc10KICAgIGVuZAogICAgUHVibGlzaGVycyAtLT58cHVibGlzaCByb290c3wgV2ViMgogICAgQ2xpZW50cyAtLT58MS4gRmV0Y2ggcm9vdHN8IFdlYjIKICAgIENsaWVudHMgLS0-fDIuIFJlcXVlc3QgZGF0YSArIHByb29mc3wgU2VydmVycwogICAgU2VydmVycyAtLT58Y2FyZGFuby11dHhvLWNzbXR8IEJDWyhDYXJkYW5vIEJsb2NrY2hhaW4pXQogICAgUHVibGlzaGVycyAtLT58Y2FyZGFuby11dHhvLWNzbXR8IEJDCg==" style="max-height: 380px;">
+</div>
+
+<hr />
+<h2 id="benefits-summary">Benefits Summary</h2>
+<table>
+<thead>
+<tr>
+<th>Stakeholder</th>
+<th>Benefit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>End Users</strong></td>
+<td>Fast, verifiable access to dApps</td>
+</tr>
+<tr>
+<td><strong>Developers</strong></td>
+<td>Simple API, no node required, just proof verification libraries</td>
+</tr>
+<tr>
+<td><strong>Ecosystem</strong></td>
+<td>More decentralized infrastructure</td>
+</tr>
+<tr>
+<td><strong>Publishers</strong></td>
+<td>Low effort, high impact reputation boost</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="cost-to-participate">Cost to Participate</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Infrastructure</th>
+<th>Interface</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Root Publisher</strong></td>
+<td>Node + cardano-utxo-csmt</td>
+<td>Static file hosting (GitHub, S3, etc.)</td>
+</tr>
+<tr>
+<td><strong>Application Server</strong></td>
+<td>Node + cardano-utxo-csmt</td>
+<td>Patch API to serve proofs with data</td>
+</tr>
+<tr>
+<td><strong>Light Client</strong></td>
+<td>None</td>
+<td>Proof verification library (browser/mobile)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Publishing roots costs almost nothing</strong></p>
+<hr />
+<h2 id="current-status">Current Status</h2>
+<p><strong>Working Today</strong></p>
+<ul>
+<li>✅ Merkle tree construction from UTxO set</li>
+<li>✅ Proof generation and verification</li>
+<li>✅ HTTP API for light clients</li>
+<li>✅ Fast bootstrap via genesis + chain sync</li>
+<li>✅ Real-time chain sync</li>
+</ul>
+<p><strong>Next Steps</strong></p>
+<ul>
+<li>Integration with wallet SDKs</li>
+<li>Public testnet deployment</li>
+<li>Performance optimization</li>
+</ul>
+<hr />
+<h2 id="the-vision">The Vision</h2>
+<p><strong>A Cardano where:</strong></p>
+<ul>
+<li>Application servers don't bear the burden of trust</li>
+<li>Light clients choose their trusted publishers from multiple independent institutions</li>
+</ul>
+<hr />
+<h2 id="questions">Questions?</h2>
+<p><strong>Resources</strong></p>
+<ul>
+<li>GitHub: <code>lambdasistemi/cardano-utxo-csmt</code></li>
+<li>Documentation: <code>/docs</code></li>
+</ul>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.indexes", "toc.integrate", "content.code.copy", "navigation.path"], "search": "../../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+    
+  </body>
+</html>

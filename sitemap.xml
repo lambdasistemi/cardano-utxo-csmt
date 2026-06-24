@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/architecture/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/database-schema/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/getting-started/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/swagger-ui/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/swagger/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/presentation/light-clients/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+    <url>
+         <loc>https://lambdasistemi.github.io/cardano-utxo-csmt/presentation/slides/</loc>
+         <lastmod>1980-01-01</lastmod>
+    </url>
+</urlset>
